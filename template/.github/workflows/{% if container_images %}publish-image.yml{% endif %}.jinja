@@ -11,7 +11,7 @@ on:
   workflow_call:
     inputs:
       image:
-        description: Image name suffix, e.g. api or web (pushed as ghcr.io/<repository>-<image>)
+        description: Image name suffix, lowercase, e.g. api or web (pushed as ghcr.io/<owner>/<repository>-<image>)
         required: true
         type: string
       context:
@@ -44,7 +44,8 @@ jobs:
     outputs:
       digest: {{ '${{ steps.build.outputs.digest }}' }}
     env:
-      IMAGE: {{ 'ghcr.io/${{ github.repository }}-${{ inputs.image }}' }}
+      # Registry paths must be lowercase; github.repository keeps the owner's capitals.
+      IMAGE: ghcr.io/{{ github_org | lower }}/{{ project_slug }}-{{ '${{ inputs.image }}' }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

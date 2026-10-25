@@ -114,3 +114,10 @@ def test_actionlint_passes_for_each_stack_combination(render, stacks):
     result = subprocess.run(["docker", "run", "--rm", "-v", f"{project}:/repo", "-w", "/repo", ACTIONLINT],
                             capture_output=True, text=True)
     assert result.returncode == 0, result.stdout + result.stderr
+
+
+def test_image_names_are_lowercase_even_when_the_owner_has_capitals(render):
+    # Codex review on PR 5: registry paths must be lowercase, and github.repository keeps capitals.
+    wf = workflows(render(github_org="ExampleOrg"))["publish-image.yml"]
+    image = wf["jobs"]["publish"]["env"]["IMAGE"]
+    assert image == "ghcr.io/exampleorg/course-lens-${{ inputs.image }}"
