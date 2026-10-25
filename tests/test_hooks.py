@@ -209,12 +209,17 @@ def test_guard_files_on_grep_globs(tmp_path, glob, expected, with_ripgrep, monke
     assert ("deny" if out else "allow") == expected
 
 
-def test_grep_glob_into_an_unignored_secrets_folder_is_refused(tmp_path):
+@pytest.mark.parametrize("glob", ["secrets/**", "!*.py"])
+@pytest.mark.parametrize("with_ripgrep", [True, False], ids=["ripgrep", "fnmatch-fallback"])
+def test_grep_glob_into_an_unignored_secrets_folder_is_refused(tmp_path, glob, with_ripgrep, monkeypatch):
+    if not with_ripgrep:
+        monkeypatch.setenv("PATH", os.pathsep.join(p for p in os.environ["PATH"].split(os.pathsep)
+                                                   if not (Path(p) / "rg").exists()))
     repo = tmp_path / "repo"
     (repo / "secrets").mkdir(parents=True)
     (repo / "secrets" / "token").write_text("x\n")
     subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
-    event = {"tool_name": "Grep", "tool_input": {"pattern": "x", "path": str(repo), "glob": "secrets/**"}}
+    event = {"tool_name": "Grep", "tool_input": {"pattern": "x", "path": str(repo), "glob": glob}}
     assert run_hook("guard-files.py", event, tmp_path) is not None
 
 

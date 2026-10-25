@@ -74,10 +74,12 @@ def ripgrep_files(base: Path, glob: str) -> list[str] | None:
 
 
 def fnmatch_options(glob: str) -> list[str]:
-    """ripgrep's glob, approximated for fnmatch: braces expanded, `[^` read as `[!`, and `**/x`
-    also tried as `x` (ripgrep matches it at the root too)."""
+    """ripgrep's glob, approximated for fnmatch: braces expanded, `[^` read as `[!`, `**/x` also
+    tried as `x` (ripgrep matches it at the root too), and a negated glob read as every file."""
     options = []
     for option in expand_braces(glob.lower().replace("[^", "[!")):
+        if option.startswith("!"):  # ripgrep reads !x as "everything except x": assume everything
+            return ["*"]
         options.append(option)
         if option.startswith("**/"):
             options.append(option[3:])
