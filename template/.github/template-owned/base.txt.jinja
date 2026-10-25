@@ -28,6 +28,9 @@ Makefile
 {%- if container_images %}
 .github/workflows/publish-image.yml
 {%- endif %}
+{%- if 'fastapi' in stacks or 'nextjs' in stacks %}
+compose.yaml
+{%- endif %}
 SECURITY.md
 docs/decisions/0001-record-decisions.md
 docs/decisions/0002-start-from-house-template.md
