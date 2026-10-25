@@ -61,8 +61,10 @@ NO_VERIFY = "Skipping git hooks (--no-verify) is not allowed. Fix what the hook 
 UNPARSEABLE = "This command line can't be parsed safely, so the push is refused. Run the push on its own."
 NAME_THE_BRANCH = ("Name the branch: `git push [-u] origin <branch>`. A bare push follows push.default and "
                    "remote.<name>.push, which can point at main.")
-NAME_THE_DESTINATION = ("This push's destination depends on remote.<name>.push configuration (or a changed "
-                        "directory). Name it: `git push origin <branch>:<branch>`.")
+NAME_THE_DESTINATION = ("This push's destination depends on configuration (remote.<name>.push, push.default "
+                        "upstream) or a changed directory. Name it: `git push origin <branch>:<branch>`.")
+CONFIG_OVERRIDE = ("Agents don't push with git config or repository overrides (-c, --config-env, GIT_CONFIG_*, "
+                   "GIT_DIR, GIT_WORK_TREE): they can redirect a push to main.")
 UNUSUAL_PUSH = ("Agents push only as `git push [-u] <remote> <branch>`; `{}` is outside that. "
                 "Ask the owner if this push is needed.")
 
@@ -81,6 +83,7 @@ class Git:
 
     cwd: str | None = None
     unknown_repo: bool = False  # --git-dir or --work-tree: the branch can't be read reliably
+    config_override: bool = False  # -c / --config-env: settings the hook can't see (#2)
     subcommand: str = ""
     args: list[str] = field(default_factory=list)
 
@@ -94,12 +97,23 @@ def branch_of(cwd: str | None) -> str:
         return ""
 
 
-def push_mappings(cwd: str | None, remote: str) -> list[str]:
-    cmd = ["git"] + (["-C", cwd] if cwd else []) + ["config", "--get-all", f"remote.{remote}.push"]
+def git_config(cwd: str | None, *args: str) -> list[str] | None:
+    cmd = ["git"] + (["-C", cwd] if cwd else []) + ["config", *args]
     try:
         return subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False).stdout.split()
     except (OSError, subprocess.SubprocessError):
-        return ["unknown"]  # fail closed
+        return None
+
+
+def source_only_is_redirected(cwd: str | None, remote: str) -> bool:
+    """Whether a source-only refspec could land somewhere other than the same-named branch:
+    remote.<name>.push mappings, or push.default upstream/tracking, which push to the branch's
+    upstream (git switch -c feat/x origin/main makes that main, #3). Fails closed."""
+    mappings = git_config(cwd, "--get-all", f"remote.{remote}.push")
+    default = git_config(cwd, "--get", "push.default")
+    if mappings is None or default is None:
+        return True
+    return bool(mappings) or (default[:1] in (["upstream"], ["tracking"]))
 
 
 def parse_git(tokens: list[str]) -> Git | None:
@@ -114,6 +128,8 @@ def parse_git(tokens: list[str]) -> Git | None:
             git.cwd = value if git.cwd is None or value.startswith("/") else f"{git.cwd}/{value}"
         elif opt in {"--git-dir", "--work-tree"}:
             git.unknown_repo = True
+        elif opt in {"-c", "--config-env"}:
+            git.config_override = True
         i += 2 if opt in GIT_VALUE_OPTIONS and not inline else 1
     if i < len(tokens):
         git.subcommand, git.args = tokens[i], tokens[i + 1:]
@@ -159,7 +175,7 @@ def judge_push(git: Git, ctx: Context) -> str | None:
         if len(names) == 1:
             # A source without :<dst> goes wherever remote.<name>.push maps it, which can be main.
             # Allowed only when that config can be read and is empty.
-            if ctx.dir_changed or git.unknown_repo or push_mappings(git.cwd, positional[0]):
+            if ctx.dir_changed or git.unknown_repo or source_only_is_redirected(git.cwd, positional[0]):
                 return NAME_THE_DESTINATION
         destination = names[-1].removeprefix("refs/heads/")
         if destination in PROTECTED:
@@ -176,19 +192,27 @@ def judge_push(git: Git, ctx: Context) -> str | None:
 WRAPPERS = {"env", "command", "exec", "nice", "nohup", "time", "sudo", "doas", "timeout", "stdbuf"}
 
 
-def unwrap(tokens: list[str]) -> list[str]:
-    """Drop leading VAR=value assignments and wrapper commands (env, nice, timeout 10, ...)."""
+# Environment variables that change which repository or settings git uses (#2).
+GIT_ENV_OVERRIDE = re.compile(r"GIT_(CONFIG\w*|DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|NAMESPACE)=")
+
+
+def unwrap(tokens: list[str]) -> tuple[list[str], bool]:
+    """Drop leading VAR=value assignments and wrapper commands (env, nice, timeout 10, ...).
+    Also reports whether any dropped assignment overrides git's repository or settings."""
+    overrides = False
     while tokens:
         head = tokens[0].rsplit("/", 1)[-1]
         if re.fullmatch(r"\w+=.*", tokens[0]):
+            overrides |= bool(GIT_ENV_OVERRIDE.match(tokens[0]))
             tokens = tokens[1:]
         elif head in WRAPPERS:
             tokens = tokens[1:]
             while tokens and (tokens[0].startswith("-") or re.fullmatch(r"[\d.]+[smhd]?|\w+=.*", tokens[0])):
+                overrides |= bool(GIT_ENV_OVERRIDE.match(tokens[0]))
                 tokens = tokens[1:]  # the wrapper's own options and arguments (timeout 10, env -i A=1)
         else:
             break
-    return tokens
+    return tokens, overrides
 
 
 def segments(command: str) -> list[list[str]]:
@@ -221,49 +245,57 @@ def git_pushes_in(tokens: list[str]) -> int:
 
 
 def judge(command: str, depth: int = 0, inherited: Context | None = None) -> str | None:
-    """The reason to deny a git operation in the command line, or None. A nested shell or eval
-    inherits the context its parent built up (Codex review: cd ... && bash -c 'git push origin HEAD')."""
+    return judge_with_context(command, depth, inherited)[0]
+
+
+def judge_with_context(command: str, depth: int = 0, inherited: Context | None = None) -> tuple[str | None, Context]:
+    """The reason to deny a git operation in the command line (or None), and the context it leaves.
+    A nested shell or eval inherits its parent's context (Codex review: cd ... && bash -c '...');
+    eval also hands its changes back, since it runs in the current shell (#4), while sh -c doesn't."""
+    ctx = replace(inherited) if inherited else Context()
     try:
         parts = segments(command)
     except ValueError:
-        return UNPARSEABLE if re.search(r"\bgit\b.*\bpush\b", command) else None
-    ctx = replace(inherited) if inherited else Context()
+        return (UNPARSEABLE if re.search(r"\bgit\b.*\bpush\b", command) else None), ctx
     for tokens in parts:
         part = " ".join(tokens)
-        tokens = unwrap(tokens)
+        tokens, env_override = unwrap(tokens)
         if tokens and tokens[0] == "eval" and depth < 3:
-            if reason := judge(" ".join(tokens[1:]), depth + 1, ctx):
-                return reason
+            reason, ctx = judge_with_context(" ".join(tokens[1:]), depth + 1, ctx)
+            if reason:
+                return reason, ctx
             continue
         if tokens and tokens[0].rsplit("/", 1)[-1] in SHELLS:
             # sh -c 'script', bash -lc 'script', bash -ec 'script': the script follows the flags.
             flags = [i for i, t in enumerate(tokens[1:], 1) if re.fullmatch(r"-[a-zA-Z]*c[a-zA-Z]*", t)]
             if flags and flags[0] + 1 < len(tokens) and depth < 3:
                 if reason := judge(tokens[flags[0] + 1], depth + 1, ctx):
-                    return reason
+                    return reason, ctx
                 continue
         git = parse_git(tokens)
         if git is None or (git.subcommand != "push" and git_pushes_in(tokens)):
             # Fail closed: a push the parser can't reach (if/then, loops, $(...), backticks,
             # functions, a shell without -c) is refused rather than allowed by omission.
             if git_pushes_in(tokens):
-                return UNPARSEABLE
+                return UNPARSEABLE, ctx
             if DIR_CHANGERS.search(part):
                 ctx.dir_changed = True
             continue
         if git.subcommand in {"commit", "merge", "rebase", "am", "cherry-pick"} and "--no-verify" in git.args:
-            return NO_VERIFY
+            return NO_VERIFY, ctx
         # For commit only, -n is --no-verify, alone or in a cluster such as -nm (for push it's --dry-run).
         if git.subcommand == "commit" and any(re.fullmatch(r"-[a-zA-Z]*n[a-zA-Z]*", a) for a in git.args):
-            return NO_VERIFY
+            return NO_VERIFY, ctx
         if git.subcommand == "push":
             if git_pushes_in(tokens) > 1:
-                return UNPARSEABLE
+                return UNPARSEABLE, ctx
+            if env_override or git.config_override:
+                return CONFIG_OVERRIDE, ctx
             if reason := judge_push(git, ctx):
-                return reason
+                return reason, ctx
         elif git.subcommand in {"switch", "checkout", "worktree"}:
             ctx.branch_changed = True
-    return None
+    return None, ctx
 
 
 def decide(command: str) -> tuple[str, str] | None:

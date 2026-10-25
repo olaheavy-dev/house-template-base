@@ -317,3 +317,48 @@ def test_nested_shells_inherit_a_directory_change(git_repo):
     assert bash_decision(f"cd {other} && git push origin feat/x", here) == "deny"
     assert bash_decision(f"cd {other} && git push origin feat/x:feat/x", here) == "allow"
     assert bash_decision("git switch feat/y && bash -c 'git push origin HEAD'", here) == "deny"
+
+
+@pytest.mark.parametrize("command", [
+    # Issue #2: per-command config and repository overrides the hook can't see.
+    "git -c remote.origin.push=refs/heads/feat/x:refs/heads/main push origin feat/x",
+    "git --config-env=remote.origin.push=PUSHMAP push origin feat/x",
+    "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=remote.origin.push GIT_CONFIG_VALUE_0=x git push origin feat/x",
+    "env GIT_CONFIG_PARAMETERS=\"'remote.origin.push'='x'\" git push origin feat/x:feat/x",
+    "GIT_DIR=../main-worktree/.git git push origin HEAD",
+    "GIT_WORK_TREE=../other git push origin feat/x:feat/x",
+])
+def test_guard_bash_refuses_pushes_with_config_overrides(git_repo, command):
+    assert bash_decision(command, git_repo("feat/x")) == "deny"
+
+
+def test_config_overrides_on_other_git_commands_are_fine(git_repo):
+    repo = git_repo("feat/x")
+    assert bash_decision("git -c color.ui=always log --oneline", repo) == "allow"
+    assert bash_decision("GIT_PAGER=cat git push origin feat/x:feat/x", repo) == "allow"
+
+
+@pytest.mark.parametrize(("setting", "expected"), [
+    # Issue #3: upstream and tracking push a source-only refspec to the branch's upstream.
+    ("upstream", "deny"),
+    ("tracking", "deny"),
+    ("simple", "allow"),
+    ("current", "allow"),
+])
+def test_guard_bash_requires_a_destination_when_push_default_follows_the_upstream(git_repo, setting, expected):
+    repo = git_repo("feat/x")
+    subprocess.run(["git", "config", "push.default", setting], cwd=repo, check=True)
+    subprocess.run(["git", "config", "branch.feat/x.merge", "refs/heads/main"], cwd=repo, check=True)
+    assert bash_decision("git push origin feat/x", repo) == expected
+    assert bash_decision("git push origin feat/x:feat/x", repo) == "allow"
+
+
+@pytest.mark.parametrize(("command", "expected"), [
+    # Issue #4: eval runs in the current shell, so its cd or switch persists.
+    ('eval "cd /tmp" && git push origin HEAD', "deny"),
+    ('eval "git switch main" && git push origin HEAD', "deny"),
+    ('eval "cd /tmp" && git push origin feat/x:feat/x', "allow"),
+    ("sh -c 'cd /tmp' && git push origin HEAD", "allow"),  # a child shell's cd doesn't persist
+])
+def test_eval_hands_its_context_back_but_child_shells_do_not(git_repo, command, expected):
+    assert bash_decision(command, git_repo("feat/x")) == expected
