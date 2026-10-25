@@ -131,7 +131,8 @@ def test_workflows_that_read_secrets_run_in_a_dedicated_environment(render):
 
 def test_template_update_uses_a_token_for_prs_and_falls_back_to_an_issue(render):
     job = workflows(render())["template-update.yml"]["jobs"]["update"]
-    assert job["permissions"] == {"contents": "read", "issues": "write"}  # GITHUB_TOKEN never pushes or opens PRs
+    # GITHUB_TOKEN never pushes or opens PRs; it reads PRs (Codex review on PR 12) and opens issues.
+    assert job["permissions"] == {"contents": "read", "pull-requests": "read", "issues": "write"}
     steps = {s["name"]: s for s in job["steps"]}
     assert "env.UPDATE_TOKEN != ''" in steps["Open the pull request"]["if"]
     assert 'GH_TOKEN="$UPDATE_TOKEN" gh pr create' in steps["Open the pull request"]["run"]
