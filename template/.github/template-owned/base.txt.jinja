@@ -28,7 +28,7 @@ Makefile
 {%- if container_images %}
 .github/workflows/publish-image.yml
 {%- endif %}
-{%- if 'fastapi' in stacks or 'nextjs' in stacks %}
+{%- if 'fastapi' in stacks %}
 compose.yaml
 {%- endif %}
 SECURITY.md

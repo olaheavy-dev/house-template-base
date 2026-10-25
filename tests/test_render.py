@@ -123,18 +123,20 @@ def test_make_check_skips_the_commit_to_main_guard(render):
     assert "SKIP=no-commit-to-branch pre-commit run --all-files" in makefile
 
 
-@pytest.mark.parametrize(
-    ("stacks", "includes"),
-    [(["fastapi", "nextjs"], ["backend/compose.yaml", "frontend/compose.yaml"]),
-     (["fastapi"], ["backend/compose.yaml"]),
-     (["nextjs"], ["frontend/compose.yaml"])],
-)
-def test_root_compose_only_includes_each_stack_layers_file(render, stacks, includes):
+# Layers that ship a compose file today. Compose has no optional include, so listing a file no
+# layer creates (frontend/compose.yaml before house-template-nextjs ships one) breaks every
+# `docker compose` command in the project.
+LAYER_COMPOSE_FILES = {"fastapi": "backend/compose.yaml"}
+
+
+@pytest.mark.parametrize("stacks", [["fastapi", "nextjs"], ["fastapi"], ["fastapi", "dotnet"]])
+def test_root_compose_includes_only_files_a_layer_ships(render, stacks):
     compose = yaml.safe_load((render(stacks=stacks) / "compose.yaml").read_text())
-    assert compose == {"name": "course-lens", "include": includes}
+    expected = [LAYER_COMPOSE_FILES[s] for s in stacks if s in LAYER_COMPOSE_FILES]
+    assert compose == {"name": "course-lens", "include": expected}
 
 
-@pytest.mark.parametrize("stacks", [[], ["dotnet"]])
+@pytest.mark.parametrize("stacks", [[], ["dotnet"], ["nextjs"], ["nextjs", "dotnet"]])
 def test_no_root_compose_without_a_layer_that_ships_one(render, stacks):
     project = render(stacks=stacks)
     assert not (project / "compose.yaml").exists()
