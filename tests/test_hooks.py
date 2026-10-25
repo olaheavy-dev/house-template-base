@@ -85,8 +85,13 @@ def test_guard_bash_allows_a_bare_push_from_a_feature_branch(git_repo):
     ("git push -fu origin feat/x", "deny"),
     ("git push -u origin feat/x -f", "deny"),
     ("git push --force-if-includes origin feat/x", "deny"),
-    ("git push -o ci.skip origin feat/x", "allow"),  # -o takes a value; not a refspec
-    ("git push --repo=origin feat/x", "allow"),
+    ("git push -o ci.skip origin feat/x", "deny"),  # allow-list: unusual flags are refused
+    ("git push --repo=origin feat/x", "deny"),
+    ("git push --delete origin feat/x", "deny"),
+    ("git push origin refs/tags/v1:refs/tags/v1", "deny"),
+    ("git push origin v1..v2", "deny"),
+    ("git push -u origin HEAD", "allow"),  # current branch is feat/x
+    ("git push origin HEAD:feat/y", "allow"),
     ("FOO=1 git push origin main", "deny"),
     ("bash -lc 'git push origin main'", "deny"),
     ("zsh -ec 'git push --force origin feat/x'", "deny"),

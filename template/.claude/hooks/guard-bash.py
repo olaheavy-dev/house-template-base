@@ -7,8 +7,10 @@ command instead: it splits it at shell operators, tokenises each part with shell
 follows `sh -c` / `bash -c` into their scripts, and reads git's global options (`-C`,
 `--git-dir`, `--work-tree`) before judging a `git push`. What it can't parse, it fails closed on.
 
-- deny: pushing to main (by refspec, a bare push from main, a bulk push such as --all), force
-  pushes in any spelling, skipping git hooks, reading .env files from the shell, and commit
+- pushes: an allow-list. Agents push only as `git push [-u] <remote> <branch>` (or a bare push
+  from a known feature branch); anything else is refused: main, force, --all, --mirror,
+  matching or wildcard refspecs, tags as destinations, unknown flags
+- deny: skipping git hooks, reading .env files from the shell, and commit
   messages or PR text that credit a coding agent (AGENTS.md rule 5)
 - ask: commands that discard local work (git reset --hard, git clean, git checkout -- .)
 
@@ -29,9 +31,11 @@ from dataclasses import dataclass, field
 
 PROTECTED = {"main", "master"}
 SHELLS = {"sh", "bash", "zsh", "dash"}
-BULK = {"--all", "--branches", "--mirror", "--prune"}
+SAFE_PUSH_FLAGS = {"-u", "--set-upstream", "-n", "--dry-run", "-v", "--verbose", "-q", "--quiet", "--tags", "--follow-tags", "--no-progress", "--progress"}
+REMOTE_NAME = re.compile(r"[A-Za-z0-9][\w.-]*")
+# A plain branch: no wildcard, no HEAD, no ref outside refs/heads/, no leading dash or dot.
+BRANCH_NAME = re.compile(r"(refs/heads/)?(?!refs/)[A-Za-z0-9](?:[\w/-]|\.(?!\.))*(?<![./])")
 FORCE_LONG = ("--force", "--force-with-lease", "--force-if-includes")
-PUSH_VALUE_OPTIONS = {"-o", "--push-option", "--repo", "--receive-pack", "--exec"}
 GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"}
 CONTEXT_CHANGERS = re.compile(r"\bgit\b.*\b(switch|checkout|worktree)\b|(^|\s)(cd|pushd|popd)(\s|$)")
 
@@ -55,6 +59,8 @@ MAIN = "Pushing to main is not allowed. Push a named branch (git push origin <br
 FORCE = "Force pushes are not allowed. Push a new commit instead."
 NO_VERIFY = "Skipping git hooks (--no-verify) is not allowed. Fix what the hook reports."
 UNPARSEABLE = "This command line can't be parsed safely, so the push is refused. Run the push on its own."
+UNUSUAL_PUSH = ("Agents push only as `git push [-u] <remote> <branch>`; `{}` is outside that. "
+                "Ask the owner if this push is needed.")
 
 
 @dataclass
@@ -95,40 +101,51 @@ def parse_git(tokens: list[str]) -> Git | None:
 
 
 def judge_push(git: Git, context_changed: bool) -> str | None:
-    positional, i = [], 0
-    while i < len(git.args):
-        arg = git.args[i]
-        opt = arg.split("=", 1)[0]
-        if opt in BULK:
-            return MAIN
-        if opt.startswith(FORCE_LONG) or (re.fullmatch(r"-[a-zA-Z]+", arg) and "f" in arg[1:]):
-            return FORCE
-        if opt == "--no-verify":
-            return NO_VERIFY
-        if opt in PUSH_VALUE_OPTIONS and "=" not in arg:
-            i += 2
+    """Allow-list: agents push only in the plain forms they need, everything else is refused.
+
+    Allowed: optional flags from SAFE_PUSH_FLAGS, then an optional remote, then branch names or
+    `branch:branch` pairs, none of them protected; or a bare push from a known, unprotected branch.
+    Refused: any other flag (force, --all, --mirror, --delete, -o, ...), "+" refspecs, ":" and
+    wildcards, tags or other refs as destinations, and a push of HEAD or a bare push whose
+    current branch is unknown or protected.
+    """
+    positional = []
+    for arg in git.args:
+        if arg.startswith("-"):
+            opt = arg.split("=", 1)[0]
+            if opt == "--no-verify":
+                return NO_VERIFY
+            if opt.startswith(FORCE_LONG) or (re.fullmatch(r"-[a-zA-Z]+", arg) and "f" in arg[1:]):
+                return FORCE
+            if opt not in SAFE_PUSH_FLAGS:
+                return UNUSUAL_PUSH.format(arg)
             continue
-        if not arg.startswith("-"):
-            positional.append(arg)
-        i += 1
+        positional.append(arg)
+    if positional and not REMOTE_NAME.fullmatch(positional[0]):
+        return UNUSUAL_PUSH.format(positional[0])
     refspecs = positional[1:]  # positional[0] is the remote
-    if any(spec.startswith("+") for spec in refspecs):
-        return FORCE
     if not refspecs:
         # A bare push uses the current branch: unknowable after a branch or directory change
         # earlier on the command line, or with --git-dir / --work-tree. Fail closed then.
-        if context_changed or git.unknown_repo or branch_of(git.cwd) in PROTECTED:
+        if context_changed or git.unknown_repo:
             return MAIN
-        return None
+        branch = branch_of(git.cwd)
+        return MAIN if not branch or branch in PROTECTED else None
     for spec in refspecs:
-        destination = spec.split(":")[-1].removeprefix("refs/heads/")
-        # ":" pushes every matching branch and a wildcard pushes many: either can update main.
-        if spec == ":" or destination == "" or "*" in spec:
-            return MAIN
+        if spec.startswith("+"):
+            return FORCE
+        names = spec.split(":")
+        if len(names) > 2 or not all(BRANCH_NAME.fullmatch(n) for n in names):
+            return UNUSUAL_PUSH.format(spec)
+        destination = names[-1].removeprefix("refs/heads/")
         if destination in PROTECTED:
             return MAIN
-        if destination == "HEAD" and (context_changed or git.unknown_repo or branch_of(git.cwd) in PROTECTED):
-            return MAIN
+        if destination == "HEAD":  # the current branch: only when it is known and unprotected
+            if context_changed or git.unknown_repo:
+                return MAIN
+            branch = branch_of(git.cwd)
+            if not branch or branch in PROTECTED:
+                return MAIN
     return None
 
 
