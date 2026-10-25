@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.4](https://github.com/olaheavy-dev/house-template-base/compare/v0.1.3...v0.1.4) (2026-10-25)
+
+
+### Bug Fixes
+
+* guard the secrets folder itself, and let a configured token unblock template updates ([#16](https://github.com/olaheavy-dev/house-template-base/issues/16)) ([5288027](https://github.com/olaheavy-dev/house-template-base/commit/5288027525a1154a03ec2af9ac0458d2f82f5d1a))
+
 ## [0.1.3](https://github.com/olaheavy-dev/house-template-base/compare/v0.1.2...v0.1.3) (2026-10-25)
 
 
