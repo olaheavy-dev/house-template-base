@@ -1,3 +1,15 @@
 # Changelog
 
+## 0.1.0 (2026-10-25)
+
+
+### Features
+
+* agent rulebook, guardrail hooks and the base copier template ([#1](https://github.com/olaheavy-dev/house-template-base/issues/1)) ([742aa39](https://github.com/olaheavy-dev/house-template-base/commit/742aa390d8a57ffb0e3ffae608e30751730d03a0))
+* CI, security and supply-chain workflows for generated projects ([#5](https://github.com/olaheavy-dev/house-template-base/issues/5)) ([e5e7f31](https://github.com/olaheavy-dev/house-template-base/commit/e5e7f31fddb02415e9e083574dd0328e28fed48e))
+* repository governance as code for generated projects ([#6](https://github.com/olaheavy-dev/house-template-base/issues/6)) ([75e00c7](https://github.com/olaheavy-dev/house-template-base/commit/75e00c711979fd7b370a7150f7cdda115e1f931e))
+* self-test the template, test updates, release with release-please, govern this repo ([#7](https://github.com/olaheavy-dev/house-template-base/issues/7)) ([9bfa011](https://github.com/olaheavy-dev/house-template-base/commit/9bfa011b903efe57baa464a41f32fcbadb27ef97))
+
+## Changelog
+
 Releases are written here by release-please from the Conventional Commit titles merged to main.
