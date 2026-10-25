@@ -59,6 +59,8 @@ MAIN = "Pushing to main is not allowed. Push a named branch (git push origin <br
 FORCE = "Force pushes are not allowed. Push a new commit instead."
 NO_VERIFY = "Skipping git hooks (--no-verify) is not allowed. Fix what the hook reports."
 UNPARSEABLE = "This command line can't be parsed safely, so the push is refused. Run the push on its own."
+NAME_THE_BRANCH = ("Name the branch: `git push [-u] origin <branch>`. A bare push follows push.default and "
+                   "remote.<name>.push, which can point at main.")
 UNUSUAL_PUSH = ("Agents push only as `git push [-u] <remote> <branch>`; `{}` is outside that. "
                 "Ask the owner if this push is needed.")
 
@@ -124,13 +126,12 @@ def judge_push(git: Git, context_changed: bool) -> str | None:
     if positional and not REMOTE_NAME.fullmatch(positional[0]):
         return UNUSUAL_PUSH.format(positional[0])
     refspecs = positional[1:]  # positional[0] is the remote
+    if not refspecs and "--tags" in git.args:
+        return None  # pushes tags only, never branches
     if not refspecs:
-        # A bare push uses the current branch: unknowable after a branch or directory change
-        # earlier on the command line, or with --git-dir / --work-tree. Fail closed then.
-        if context_changed or git.unknown_repo:
-            return MAIN
-        branch = branch_of(git.cwd)
-        return MAIN if not branch or branch in PROTECTED else None
+        # A bare push goes wherever push.default and remote.<name>.push send it (HEAD:main is a
+        # valid setting), so agents always name the branch; an explicit refspec overrides both.
+        return NAME_THE_BRANCH
     for spec in refspecs:
         if spec.startswith("+"):
             return FORCE
@@ -181,6 +182,21 @@ def segments(command: str) -> list[list[str]]:
     return [p for p in parts if p]
 
 
+def git_pushes_in(tokens: list[str]) -> int:
+    """Count `push` tokens that follow a git token in one segment, wherever the git token sits
+    (after `then`, inside `$(git`, after a backtick): the pushes the parser must account for."""
+    count = 0
+    for i, token in enumerate(tokens):
+        if not re.search(r"(^|[/`(])git$", token):
+            continue
+        j = i + 1  # skip git's global options to reach its subcommand
+        while j < len(tokens) and tokens[j].startswith("-"):
+            j += 2 if tokens[j] in GIT_VALUE_OPTIONS else 1
+        if j < len(tokens) and tokens[j].rstrip(")`") == "push":
+            count += 1
+    return count
+
+
 def judge(command: str, depth: int = 0) -> str | None:
     """The reason to deny a git operation in the command line, or None."""
     try:
@@ -201,9 +217,13 @@ def judge(command: str, depth: int = 0) -> str | None:
             if flags and flags[0] + 1 < len(tokens) and depth < 3:
                 if reason := judge(tokens[flags[0] + 1], depth + 1):
                     return reason
-            continue
+                continue
         git = parse_git(tokens)
-        if git is None:
+        if git is None or (git.subcommand != "push" and git_pushes_in(tokens)):
+            # Fail closed: a push the parser can't reach (if/then, loops, $(...), backticks,
+            # functions, a shell without -c) is refused rather than allowed by omission.
+            if git_pushes_in(tokens):
+                return UNPARSEABLE
             if CONTEXT_CHANGERS.search(part):
                 context_changed = True
             continue
@@ -213,6 +233,8 @@ def judge(command: str, depth: int = 0) -> str | None:
         if git.subcommand == "commit" and any(re.fullmatch(r"-[a-zA-Z]*n[a-zA-Z]*", a) for a in git.args):
             return NO_VERIFY
         if git.subcommand == "push":
+            if git_pushes_in(tokens) > 1:
+                return UNPARSEABLE
             if reason := judge_push(git, context_changed):
                 return reason
         elif git.subcommand in {"switch", "checkout", "worktree"}:

@@ -25,6 +25,12 @@ def bash_decision(command: str, cwd: Path) -> str:
 
 ON_A_FEATURE_BRANCH = [
     ("git push -u origin feat/agent-workflow", "allow"),
+    ("if true; then git push origin HEAD:main; fi", "deny"),  # pushes the parser can't reach
+    ("for b in x; do git push origin $b; done", "deny"),
+    ("echo $(git push origin main)", "deny"),
+    ("echo `git push origin main`", "deny"),
+    ("git commit -m 'fix: push the button'", "allow"),  # the word push in a message
+    ("git log --grep push", "allow"),
     ("make check && git push origin feat/x", "allow"),
     ("git push origin main", "deny"),
     ("git push origin HEAD:main", "deny"),
@@ -64,12 +70,16 @@ def test_guard_bash_denies_a_bare_push_from_main(git_repo, command):
 def test_guard_bash_reads_the_branch_of_the_repository_git_c_points_at(git_repo):
     # Codex review on PR 1: -C changes the repository within one git invocation.
     here, other = git_repo("feat/x"), git_repo("main")
-    assert bash_decision(f"git -C {other} push origin", here) == "deny"
-    assert bash_decision(f"git -C {here} push origin", other) == "allow"
+    assert bash_decision(f"git -C {other} push origin HEAD", here) == "deny"
+    assert bash_decision(f"git -C {here} push origin HEAD", other) == "allow"
 
 
-def test_guard_bash_allows_a_bare_push_from_a_feature_branch(git_repo):
-    assert bash_decision("git push", git_repo("feat/x")) == "allow"
+def test_guard_bash_refuses_a_bare_push_even_from_a_feature_branch(git_repo):
+    # A bare push follows push.default and remote.<name>.push (Codex: HEAD:main is valid config),
+    # so agents always name the branch.
+    repo = git_repo("feat/x")
+    assert bash_decision("git push", repo) == "deny"
+    assert bash_decision("git push origin", repo) == "deny"
 
 
 @pytest.mark.parametrize(("command", "expected"), [
