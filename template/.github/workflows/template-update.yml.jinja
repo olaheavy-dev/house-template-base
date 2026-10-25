@@ -1,0 +1,87 @@
+# Owned by house-template-base. Dependabot for the template layers: each week it checks every
+# .copier-answers.*.yml with `copier check-update` and, when a layer has a new version, runs
+# `copier update` and opens one pull request with the changes. Conflicts stay as inline markers,
+# which the merge-conflict check fails on, so they get resolved in the PR rather than hidden.
+# `--trust` runs the template's own tasks and migrations: only templates from {{ github_org }} are applied.
+#
+# Pull requests opened with GITHUB_TOKEN don't start other workflows, so CI won't run on them
+# automatically. Add a TEMPLATE_UPDATE_TOKEN secret (a GitHub App token or a fine-grained token with
+# contents and pull-requests write) to have CI run straight away.
+name: Template update
+
+on:
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: {{ '${{ github.workflow }}' }}
+  cancel-in-progress: false
+
+jobs:
+  update:
+    name: Update template layers
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: write # push the update branch
+      pull-requests: write # open the pull request
+    env:
+      COPIER_VERSION: "9.19.1"
+      GH_TOKEN: {{ '${{ secrets.TEMPLATE_UPDATE_TOKEN || github.token }}' }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+
+      - name: Skip if an update is already open
+        id: open
+        run: |
+          count=$(gh pr list --label template-update --state open --json number --jq length)
+          echo "count=${count}" >> "$GITHUB_OUTPUT"
+
+      - name: Apply new template versions
+        if: steps.open.outputs.count == '0'
+        id: update
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          updated=""
+          for answers in .copier-answers.*.yml; do
+            status=0
+            uvx "copier==${COPIER_VERSION}" check-update --quiet --answers-file "$answers" || status=$?
+            if [ "$status" -eq 2 ]; then
+              uvx "copier==${COPIER_VERSION}" update --trust --defaults --conflict inline --answers-file "$answers"
+              git add -A && git commit -q -m "chore: update ${answers#.copier-answers.} template layer" --allow-empty
+              updated="${updated} ${answers}"
+            elif [ "$status" -ne 0 ]; then
+              echo "::warning::copier check-update failed for ${answers} (exit ${status})"
+            fi
+          done
+          echo "updated=${updated}" >> "$GITHUB_OUTPUT"
+
+      - name: Open the pull request
+        if: steps.update.outputs.updated != ''
+        env:
+          UPDATED: {{ '${{ steps.update.outputs.updated }}' }}
+          REPOSITORY: {{ '${{ github.repository }}' }}
+        run: |
+          branch="chore/template-update-$(date -u +%Y%m%d)"
+          git switch -c "$branch"
+          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" "$branch"
+          gh label create template-update --color 0E8A16 --description "Changes from a template layer" 2>/dev/null || true
+          {
+            echo "New template versions for:${UPDATED}."
+            echo
+            echo "Review the changes like any other PR. If the merge-conflict check fails, resolve the inline markers in this branch."
+          } > body.md
+          gh pr create --head "$branch" --title "chore: update template layers" --label template-update --body-file body.md

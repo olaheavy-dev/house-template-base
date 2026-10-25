@@ -1,0 +1,114 @@
+# Owned by house-template-base. A reusable workflow every image goes through: build, push by digest,
+# SBOM, provenance and SBOM attestations pushed to the registry, then verification of both before
+# the digest is handed to a deploy. Building inside one reusable workflow is what lifts the
+# provenance to SLSA Build Level 3 (https://docs.github.com/en/actions/concepts/security/artifact-attestations).
+# Stack layers call it from their own publish workflow:
+#   uses: ./.github/workflows/publish-image.yml
+#   with: { image: api, context: backend }
+name: Publish image
+
+on:
+  workflow_call:
+    inputs:
+      image:
+        description: Image name suffix, e.g. api or web (pushed as ghcr.io/<repository>-<image>)
+        required: true
+        type: string
+      context:
+        description: Build context directory
+        required: true
+        type: string
+      file:
+        description: Dockerfile path (defaults to <context>/Dockerfile)
+        required: false
+        type: string
+        default: ""
+    outputs:
+      digest:
+        description: The pushed image digest (deploy by digest, never by tag)
+        value: {{ '${{ jobs.publish.outputs.digest }}' }}
+
+permissions: {}
+
+jobs:
+  publish:
+    name: {{ 'Build, attest and verify ${{ inputs.image }}' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write # push to GHCR
+      id-token: write # sign attestations with Sigstore
+      attestations: write # store attestations
+      artifact-metadata: write # storage record for the image (organisation repositories)
+    outputs:
+      digest: {{ '${{ steps.build.outputs.digest }}' }}
+    env:
+      IMAGE: {{ 'ghcr.io/${{ github.repository }}-${{ inputs.image }}' }}
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Log in to GHCR
+        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: {{ '${{ github.actor }}' }}
+          password: {{ '${{ github.token }}' }}
+
+      - name: Build and push
+        id: build
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: {{ '${{ inputs.context }}' }}
+          file: {{ "${{ inputs.file || format('{0}/Dockerfile', inputs.context) }}" }}
+          push: true
+          # Every build gets an immutable sha tag; only main also moves the main tag.
+          tags: |
+            {{ '${{ env.IMAGE }}:sha-${{ github.sha }}' }}
+            {{ "${{ github.ref == 'refs/heads/main' && format('{0}:main', env.IMAGE) || '' }}" }}
+          provenance: false # provenance and SBOM come from GitHub attestations below
+          sbom: false
+
+      - name: Generate the SBOM
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        with:
+          image: {{ '${{ env.IMAGE }}@${{ steps.build.outputs.digest }}' }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Attest build provenance
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: {{ '${{ env.IMAGE }}' }}
+          subject-digest: {{ '${{ steps.build.outputs.digest }}' }}
+          push-to-registry: true
+
+      - name: Attest the SBOM
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-name: {{ '${{ env.IMAGE }}' }}
+          subject-digest: {{ '${{ steps.build.outputs.digest }}' }}
+          sbom-path: sbom.spdx.json
+          push-to-registry: true
+
+      - name: Verify both attestations
+        env:
+          GH_TOKEN: {{ '${{ github.token }}' }}
+          DIGEST: {{ '${{ steps.build.outputs.digest }}' }}
+          REPOSITORY: {{ '${{ github.repository }}' }}
+        run: |
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" --repo "$REPOSITORY" \
+            --signer-workflow "${REPOSITORY}/.github/workflows/publish-image.yml"
+          # actions/attest names the SBOM predicate after the document's own spdxVersion.
+          version=$(python3 -c 'import json; print(json.load(open("sbom.spdx.json"))["spdxVersion"].removeprefix("SPDX-"))')
+          gh attestation verify "oci://${IMAGE}@${DIGEST}" --repo "$REPOSITORY" \
+            --signer-workflow "${REPOSITORY}/.github/workflows/publish-image.yml" \
+            --predicate-type "https://spdx.dev/Document/v${version}"
