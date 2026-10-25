@@ -1,6 +1,7 @@
 # Owned by house-template-base. actionlint checks workflow syntax and expressions; zizmor audits
 # them for security problems (pedantic persona) and reports to code scanning, where the ruleset's
 # "require code scanning results" makes findings block a merge (zizmor exits 0 when writing SARIF).
+# Both jobs are required checks, so the workflow runs on every pull request (no paths filter).
 name: Workflow lint
 
 on:

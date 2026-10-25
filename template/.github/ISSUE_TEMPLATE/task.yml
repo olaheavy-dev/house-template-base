@@ -1,0 +1,36 @@
+name: Task
+description: A piece of work with a plan, built as one vertical slice.
+labels: ["task"]
+body:
+  - type: textarea
+    id: goal
+    attributes:
+      label: Goal
+      description: What to build and what "done" looks like, in one or two sentences.
+    validations:
+      required: true
+  - type: textarea
+    id: plan
+    attributes:
+      label: Plan
+      description: What is created or reused, any data or API contract, the files touched. Small changes get a short plan.
+    validations:
+      required: true
+  - type: textarea
+    id: acceptance
+    attributes:
+      label: Acceptance criteria
+      description: Each criterion with the test that proves it. Include edge, error and empty states.
+      value: |
+        - [ ]
+    validations:
+      required: true
+  - type: input
+    id: flag
+    attributes:
+      label: Feature flag
+      description: The flag this ships behind, if any.
+  - type: textarea
+    id: risks
+    attributes:
+      label: Risks and open questions

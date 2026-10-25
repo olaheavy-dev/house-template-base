@@ -1,0 +1,26 @@
+# 0002. Start from the house template layers
+
+Status: Accepted
+
+## Context
+
+Every project needs the same agent workflow, CI, security and governance. Rebuilding them per project drifts and wastes the first days of every project.
+
+## Decision
+
+{{ project_name }} starts from `house-template-base`{% for s in stacks %} and `house-template-{{ s }}`{% endfor %}, applied with Copier, each layer with its own answers file (`.copier-answers.<layer>.yml`). Template-owned files are listed in `.github/template-owned/`. Generic improvements go upstream to the template; the weekly template update brings new versions back as a pull request.
+
+## Consequences
+
+- Answers files are never edited by hand; change an answer with `copier update -a <file> --data key=value`.
+- A pull request that changes a template-owned file gets a CI warning, to keep improvements flowing upstream.
+
+## Alternatives considered
+
+- Copying files from an existing project: no update path, and drift starts on day one.
+- One template repository for all layers: Copier versions a template by its repository's tags, so layers in one repository would share one version line.
+
+## Sources
+
+- Copier, applying multiple templates to the same project: https://copier.readthedocs.io/en/stable/configuring/#applying-multiple-templates-to-the-same-subproject
+- Copier, updating a project: https://copier.readthedocs.io/en/stable/updating/

@@ -1,0 +1,26 @@
+name: Bug
+description: Something behaves wrongly or fails a quality bar.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what should have happened
+    validations:
+      required: true
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Environment, inputs and steps. Never paste secrets or personal data.
+    validations:
+      required: true
+  - type: dropdown
+    id: severity
+    attributes:
+      label: Severity
+      options:
+        - "P0/P1: wrong behaviour, data or claim, security or privacy problem"
+        - "P2/P3: polish, wording, minor gap"
+    validations:
+      required: true

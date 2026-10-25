@@ -13,6 +13,11 @@ Makefile
 .claude/rules/decisions.md
 .claude/rules/claude-config.md
 .github/template-owned/base.txt
+.github/rulesets/main.json
+.github/dependabot.yml
+.github/CODEOWNERS
+.github/pull_request_template.md
+.github/ISSUE_TEMPLATE/*
 .github/workflows/ci.yml
 .github/workflows/workflow-lint.yml
 .github/workflows/codeql.yml
@@ -23,5 +28,9 @@ Makefile
 {%- if container_images %}
 .github/workflows/publish-image.yml
 {%- endif %}
+SECURITY.md
+docs/decisions/0001-record-decisions.md
+docs/decisions/0002-start-from-house-template.md
+tools/apply-repo-settings.sh
 tools/check_no_rej.py
 tools/check_template_owned.py

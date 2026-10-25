@@ -1,0 +1,23 @@
+name: Decision needed
+description: A choice that needs the owner, or a hard-to-reverse choice that needs a decision record.
+labels: ["decision"]
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: The question
+    validations:
+      required: true
+  - type: textarea
+    id: options
+    attributes:
+      label: Options and what each means in practice
+    validations:
+      required: true
+  - type: textarea
+    id: recommendation
+    attributes:
+      label: Recommendation and why
+      description: Link the official documentation or measurements it rests on.
+    validations:
+      required: true
