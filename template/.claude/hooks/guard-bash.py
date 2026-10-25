@@ -57,9 +57,12 @@ def current_branch() -> str:
 def pushes_to_protected(command: str) -> bool:
     """True when a `git push` in the command targets a protected branch: named in a refspec's
     destination, or, when no refspec is given, because the current branch is protected."""
+    context_changed = False  # an earlier part switched branch or directory: the branch is unknown
     for part in re.split(r"&&|\|\||;|\||\n", command):
         match = re.search(r"\bgit\b.*?\bpush\b(.*)", part)
         if not match:
+            if re.search(r"\bgit\b.*\b(switch|checkout|worktree)\b|(^|\s)(cd|pushd|popd)(\s|$)", part):
+                context_changed = True
             continue
         words = match.group(1).split()
         if BULK_PUSH.intersection(w.split("=")[0] for w in words):
@@ -67,7 +70,9 @@ def pushes_to_protected(command: str) -> bool:
         args = [a.strip("'\"") for a in words if not a.startswith("-")]
         refspecs = args[1:]  # args[0] is the remote
         if not refspecs:
-            if current_branch() in PROTECTED:
+            # Fail closed: after a branch or directory change in the same command line, the
+            # branch a bare push runs from can't be known before it runs.
+            if context_changed or current_branch() in PROTECTED:
                 return True
             continue
         for spec in refspecs:
@@ -79,7 +84,8 @@ def pushes_to_protected(command: str) -> bool:
 
 def decide(command: str) -> tuple[str, str] | None:
     if pushes_to_protected(command):
-        return "deny", "Pushing to main is not allowed. Push a branch and open a pull request."
+        return "deny", ("Pushing to main is not allowed. Push a named branch (git push origin <branch>) "
+                        "and open a pull request.")
     for pattern, reason in DENY:
         if re.search(pattern, command):
             return "deny", reason

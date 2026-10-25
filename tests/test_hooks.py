@@ -65,6 +65,18 @@ def test_guard_bash_allows_a_bare_push_from_a_feature_branch(git_repo):
     assert bash_decision("git push", git_repo("feat/x")) == "allow"
 
 
+@pytest.mark.parametrize(("command", "expected"), [
+    ("git switch main && git push origin", "deny"),
+    ("git checkout main; git push", "deny"),
+    ("cd ../other-repo && git push", "deny"),
+    ("git switch feat/y && git push origin feat/y", "allow"),  # a named branch is known
+    ("git switch -c feat/y && git push -u origin feat/y", "allow"),
+])
+def test_guard_bash_fails_closed_when_a_branch_change_precedes_a_bare_push(git_repo, command, expected):
+    # The hook runs before the command, so it can't see which branch a bare push will run from.
+    assert bash_decision(command, git_repo("feat/x")) == expected
+
+
 @pytest.mark.parametrize(("path", "expected"), [
     (".env", "deny"),
     ("config/.env.production", "deny"),
