@@ -23,10 +23,21 @@ def git(*args: str) -> str:
     return subprocess.run(["git", *args], capture_output=True, text=True, timeout=15, check=False).stdout.strip()
 
 
+def unpushed_commits() -> bool:
+    """Commits on this branch that its upstream doesn't have yet. Without an upstream, commits no
+    remote has; in a repository with no remote at all, none (before the first push every commit
+    would count, and checks would run on every stop)."""
+    if git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"):
+        return bool(git("log", "@{upstream}..HEAD", "--oneline", "-1"))
+    if git("for-each-ref", "--count=1", "refs/remotes"):
+        return bool(git("log", "HEAD", "--not", "--remotes", "--oneline", "-1"))
+    return False
+
+
 def has_changes() -> bool:
-    """Uncommitted changes, or local commits not on any remote yet (an agent may commit during the
-    turn). Pushed commits already passed `make check-fast` in the pre-push hook."""
-    return bool(git("status", "--porcelain") or git("log", "--branches", "--not", "--remotes", "--oneline", "-1"))
+    """Uncommitted changes, or commits an agent may have made during the turn. Pushed commits
+    already passed `make check-fast` in the pre-push hook."""
+    return bool(git("status", "--porcelain")) or unpushed_commits()
 
 
 def main() -> int:

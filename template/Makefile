@@ -32,7 +32,8 @@ install-base: ## Install pre-commit and the git hooks
 	pre-commit install
 
 check-base: ## Repository hygiene, secret scan and workflow lint on every file
-	pre-commit run --all-files
+	@# no-commit-to-branch guards commits, not checks: skip it so make check passes on main (CI)
+	SKIP=no-commit-to-branch pre-commit run --all-files
 
 template-status: ## Show whether each template layer has a newer version
 	@for f in .copier-answers.*.yml; do \

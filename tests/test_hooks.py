@@ -144,6 +144,24 @@ def test_guard_files(tmp_path, path, expected):
         assert out["hookSpecificOutput"]["permissionDecisionReason"]
 
 
+@pytest.mark.parametrize(("tool", "key", "path", "expected"), [
+    # Fallback review on PR 1: a fixed deny list missed .env.prod, .env.backup and backend/.env.
+    ("Read", "file_path", ".env", "deny"),
+    ("Read", "file_path", ".env.prod", "deny"),
+    ("Read", "file_path", ".env.backup", "deny"),
+    ("Read", "file_path", "backend/.env", "deny"),
+    ("Read", "file_path", "backend/.env.local.bak", "deny"),
+    ("Read", "file_path", ".env.example", "allow"),
+    ("Read", "file_path", "secrets/token.txt", "deny"),
+    ("Read", "file_path", ".copier-answers.base.yml", "allow"),  # read yes, edit no
+    ("Grep", "path", "backend/.env", "deny"),
+    ("Grep", "path", "backend", "allow"),
+])
+def test_guard_files_on_reads(tmp_path, tool, key, path, expected):
+    out = run_hook("guard-files.py", {"tool_name": tool, "tool_input": {key: f"/repo/{path}"}}, tmp_path)
+    assert ("deny" if out else "allow") == expected
+
+
 def _project_with_check(repo: Path, recipe: str) -> None:
     (repo / "Makefile").write_text(f"check-fast:\n\t{recipe}\n")
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
@@ -167,10 +185,18 @@ def test_stop_hook_passes_when_check_fast_passes(git_repo):
     assert run_hook("stop-checks.py", {"hook_event_name": "Stop", "stop_hook_active": False}, repo) is None
 
 
-def test_stop_hook_checks_commits_made_during_the_turn(git_repo):
+def _with_remote(repo: Path, tmp_path: Path) -> None:
+    remote = tmp_path / f"{repo.name}-remote.git"
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    subprocess.run(["git", "remote", "add", "origin", str(remote)], cwd=repo, check=True)
+    subprocess.run(["git", "push", "-q", "-u", "origin", "HEAD"], cwd=repo, check=True)
+
+
+def test_stop_hook_checks_commits_made_during_the_turn(git_repo, tmp_path):
     # Codex review on PR 1: an agent that commits leaves git status clean.
     repo = git_repo("feat/x")
     _project_with_check(repo, "@echo 'types: 1 error' && exit 1")
+    _with_remote(repo, tmp_path)
     (repo / "new.py").write_text("x = 1\n")
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "wip"], cwd=repo, check=True)
@@ -181,10 +207,14 @@ def test_stop_hook_checks_commits_made_during_the_turn(git_repo):
 def test_stop_hook_does_nothing_without_changes(git_repo, tmp_path):
     repo = git_repo("feat/x")
     _project_with_check(repo, "@exit 1")
-    remote = tmp_path / "remote.git"  # everything pushed: nothing new to check
-    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
-    subprocess.run(["git", "push", "-q", str(remote), "feat/x"], cwd=repo, check=True)
-    subprocess.run(["git", "fetch", "-q", str(remote), "+refs/heads/*:refs/remotes/origin/*"], cwd=repo, check=True)
+    _with_remote(repo, tmp_path)  # everything pushed: nothing new to check
+    assert run_hook("stop-checks.py", {"hook_event_name": "Stop", "stop_hook_active": False}, repo) is None
+
+
+def test_stop_hook_ignores_old_commits_in_a_repository_with_no_remote(git_repo):
+    # Fallback review on PR 1: before the first push every commit is "unpushed".
+    repo = git_repo("feat/x")
+    _project_with_check(repo, "@exit 1")
     assert run_hook("stop-checks.py", {"hook_event_name": "Stop", "stop_hook_active": False}, repo) is None
 
 

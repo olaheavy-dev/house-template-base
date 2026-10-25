@@ -36,7 +36,7 @@ def test_settings_turn_off_agent_attribution_and_bypass_mode(render):
     assert data["attribution"] == {"commit": "", "pr": "", "sessionUrl": False}
     assert data["permissions"]["disableBypassPermissionsMode"] == "disable"
     deny = data["permissions"]["deny"]
-    assert "Read(./.env)" in deny and "Read(./.env.production)" in deny
+    assert "Read(./**/.env)" in deny and "Read(./**/.env.production)" in deny
     # .env.example is what AGENTS.md tells agents to read, and an allow rule can't override a deny.
     assert not any(rule.startswith("Read(./.env.*)") for rule in deny)
 
@@ -110,3 +110,14 @@ def test_gitignore_keeps_secrets_and_local_settings_out(render):
 def test_invalid_slugs_are_refused(render, slug):
     with pytest.raises((ValueError, UserMessageError, CopierAnswersInterrupt)):
         render(project_slug=slug)
+
+
+def test_file_guard_also_covers_reads(render):
+    matchers = [g["matcher"] for g in settings(render())["hooks"]["PreToolUse"]]
+    assert "Edit|Write|NotebookEdit|Read|Grep" in matchers
+
+
+def test_make_check_skips_the_commit_to_main_guard(render):
+    # Fallback review on PR 1: no-commit-to-branch fails on main, so make check failed in CI on main.
+    makefile = (render() / "Makefile").read_text()
+    assert "SKIP=no-commit-to-branch pre-commit run --all-files" in makefile
