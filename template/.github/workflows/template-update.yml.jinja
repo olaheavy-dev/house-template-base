@@ -4,9 +4,11 @@
 # which the merge-conflict check fails on, so they get resolved in the PR rather than hidden.
 # `--trust` runs the template's own tasks and migrations: only templates from {{ github_org }} are applied.
 #
-# Pull requests opened with GITHUB_TOKEN don't start other workflows, so CI won't run on them
-# automatically. Add a TEMPLATE_UPDATE_TOKEN secret to the `template-update` environment (a GitHub
-# App token or a fine-grained token with contents and pull-requests write) to have CI run straight away.
+# The branch and pull request are made with TEMPLATE_UPDATE_TOKEN, a secret in the `template-update`
+# environment (a GitHub App token or a fine-grained token with contents and pull-requests write).
+# A token is used rather than letting GITHUB_TOKEN create pull requests: that setting stays off, and
+# CI runs on PRs opened with a token but not on PRs opened with GITHUB_TOKEN. Without the token the
+# workflow opens an issue saying which layers have updates, using GITHUB_TOKEN with issues: write.
 name: Template update
 
 on:
@@ -24,15 +26,16 @@ jobs:
   update:
     name: Update template layers
     runs-on: ubuntu-24.04
-    # TEMPLATE_UPDATE_TOKEN, if set, lives in this environment's secrets (zizmor: secrets-outside-env).
+    # TEMPLATE_UPDATE_TOKEN lives in this environment's secrets (zizmor: secrets-outside-env).
     environment: template-update
     timeout-minutes: 20
     permissions:
-      contents: write # push the update branch
-      pull-requests: write # open the pull request
+      contents: read
+      issues: write # report available updates when no token is configured
     env:
       COPIER_VERSION: "9.19.1"
-      GH_TOKEN: {{ '${{ secrets.TEMPLATE_UPDATE_TOKEN || github.token }}' }}
+      UPDATE_TOKEN: {{ '${{ secrets.TEMPLATE_UPDATE_TOKEN }}' }}
+      GH_TOKEN: {{ '${{ github.token }}' }}
     steps:
       - name: Check out the repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -48,8 +51,9 @@ jobs:
       - name: Skip if an update is already open
         id: open
         run: |
-          count=$(gh pr list --label template-update --state open --json number --jq length)
-          echo "count=${count}" >> "$GITHUB_OUTPUT"
+          prs=$(gh pr list --label template-update --state open --json number --jq length)
+          issues=$(gh issue list --label template-update --state open --json number --jq length)
+          echo "count=$((prs + issues))" >> "$GITHUB_OUTPUT"
 
       - name: Apply new template versions
         if: steps.open.outputs.count == '0'
@@ -72,18 +76,30 @@ jobs:
           echo "updated=${updated}" >> "$GITHUB_OUTPUT"
 
       - name: Open the pull request
-        if: steps.update.outputs.updated != ''
+        if: steps.update.outputs.updated != '' && env.UPDATE_TOKEN != ''
         env:
           UPDATED: {{ '${{ steps.update.outputs.updated }}' }}
           REPOSITORY: {{ '${{ github.repository }}' }}
         run: |
           branch="chore/template-update-$(date -u +%Y%m%d)"
           git switch -c "$branch"
-          git push "https://x-access-token:${GH_TOKEN}@github.com/${REPOSITORY}.git" "$branch"
-          gh label create template-update --color 0E8A16 --description "Changes from a template layer" 2>/dev/null || true
+          git push "https://x-access-token:${UPDATE_TOKEN}@github.com/${REPOSITORY}.git" "$branch"
           {
             echo "New template versions for:${UPDATED}."
             echo
             echo "Review the changes like any other PR. If the merge-conflict check fails, resolve the inline markers in this branch."
           } > body.md
-          gh pr create --head "$branch" --title "chore: update template layers" --label template-update --body-file body.md
+          GH_TOKEN="$UPDATE_TOKEN" gh pr create --head "$branch" --title "chore: update template layers" \
+            --label template-update --body-file body.md
+
+      - name: Report the update without a token
+        if: steps.update.outputs.updated != '' && env.UPDATE_TOKEN == ''
+        env:
+          UPDATED: {{ '${{ steps.update.outputs.updated }}' }}
+        run: |
+          {
+            echo "New template versions are available for:${UPDATED}."
+            echo
+            echo "Add a TEMPLATE_UPDATE_TOKEN secret to the \`template-update\` environment so this workflow can open the update as a pull request, or run \`copier update --trust -a <answers file>\` locally."
+          } > body.md
+          gh issue create --title "Template update available" --label template-update --body-file body.md
