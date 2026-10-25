@@ -73,6 +73,10 @@ def test_guard_bash_allows_a_bare_push_from_a_feature_branch(git_repo):
 
 
 @pytest.mark.parametrize(("command", "expected"), [
+    ("git commit -n -m 'feat: x'", "deny"),  # -n is commit's short --no-verify
+    ("git commit -nm 'feat: x'", "deny"),
+    ("git commit -am 'feat: x'", "allow"),
+    ("git push -n origin feat/x", "allow"),  # for push, -n is --dry-run
     ("git push -uf origin feat/x", "deny"),  # force inside combined short options
     ("git push -fu origin feat/x", "deny"),
     ("git push -u origin feat/x -f", "deny"),

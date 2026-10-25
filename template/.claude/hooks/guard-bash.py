@@ -189,6 +189,9 @@ def judge(command: str, depth: int = 0) -> str | None:
             continue
         if git.subcommand in {"commit", "merge", "rebase", "am", "cherry-pick"} and "--no-verify" in git.args:
             return NO_VERIFY
+        # For commit only, -n is --no-verify, alone or in a cluster such as -nm (for push it's --dry-run).
+        if git.subcommand == "commit" and any(re.fullmatch(r"-[a-zA-Z]*n[a-zA-Z]*", a) for a in git.args):
+            return NO_VERIFY
         if git.subcommand == "push":
             if reason := judge_push(git, context_changed):
                 return reason
