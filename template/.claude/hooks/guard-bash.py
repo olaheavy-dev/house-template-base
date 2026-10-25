@@ -27,7 +27,7 @@ import re
 import shlex
 import subprocess
 import sys
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 
 PROTECTED = {"main", "master"}
 SHELLS = {"sh", "bash", "zsh", "dash"}
@@ -37,7 +37,7 @@ REMOTE_NAME = re.compile(r"[A-Za-z0-9][\w.-]*")
 BRANCH_NAME = re.compile(r"(refs/heads/)?(?!refs/)[A-Za-z0-9](?:[\w/-]|\.(?!\.))*(?<![./])")
 FORCE_LONG = ("--force", "--force-with-lease", "--force-if-includes")
 GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"}
-CONTEXT_CHANGERS = re.compile(r"\bgit\b.*\b(switch|checkout|worktree)\b|(^|\s)(cd|pushd|popd)(\s|$)")
+DIR_CHANGERS = re.compile(r"(^|\s)(cd|pushd|popd)(\s|$)")
 
 DENY_TEXT: list[tuple[str, str]] = [
     (r"(?i)co-authored-by:\s*[^\n]*(claude|anthropic|codex|openai|copilot|cursor|gemini|agent)",
@@ -61,8 +61,18 @@ NO_VERIFY = "Skipping git hooks (--no-verify) is not allowed. Fix what the hook 
 UNPARSEABLE = "This command line can't be parsed safely, so the push is refused. Run the push on its own."
 NAME_THE_BRANCH = ("Name the branch: `git push [-u] origin <branch>`. A bare push follows push.default and "
                    "remote.<name>.push, which can point at main.")
+NAME_THE_DESTINATION = ("This push's destination depends on remote.<name>.push configuration (or a changed "
+                        "directory). Name it: `git push origin <branch>:<branch>`.")
 UNUSUAL_PUSH = ("Agents push only as `git push [-u] <remote> <branch>`; `{}` is outside that. "
                 "Ask the owner if this push is needed.")
+
+
+@dataclass
+class Context:
+    """What earlier parts of the command line changed before a push runs."""
+
+    branch_changed: bool = False  # git switch / checkout / worktree: HEAD is no longer known
+    dir_changed: bool = False  # cd / pushd / popd: the repository and its config are unknown
 
 
 @dataclass
@@ -84,6 +94,14 @@ def branch_of(cwd: str | None) -> str:
         return ""
 
 
+def push_mappings(cwd: str | None, remote: str) -> list[str]:
+    cmd = ["git"] + (["-C", cwd] if cwd else []) + ["config", "--get-all", f"remote.{remote}.push"]
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False).stdout.split()
+    except (OSError, subprocess.SubprocessError):
+        return ["unknown"]  # fail closed
+
+
 def parse_git(tokens: list[str]) -> Git | None:
     """Read git's global options up to the subcommand. None if this isn't a git invocation."""
     if not tokens or tokens[0].rsplit("/", 1)[-1] != "git":
@@ -102,7 +120,7 @@ def parse_git(tokens: list[str]) -> Git | None:
     return git
 
 
-def judge_push(git: Git, context_changed: bool) -> str | None:
+def judge_push(git: Git, ctx: Context) -> str | None:
     """Allow-list: agents push only in the plain forms they need, everything else is refused.
 
     Allowed: optional flags from SAFE_PUSH_FLAGS, then an optional remote, then branch names or
@@ -138,11 +156,16 @@ def judge_push(git: Git, context_changed: bool) -> str | None:
         names = spec.split(":")
         if len(names) > 2 or not all(BRANCH_NAME.fullmatch(n) for n in names):
             return UNUSUAL_PUSH.format(spec)
+        if len(names) == 1:
+            # A source without :<dst> goes wherever remote.<name>.push maps it, which can be main.
+            # Allowed only when that config can be read and is empty.
+            if ctx.dir_changed or git.unknown_repo or push_mappings(git.cwd, positional[0]):
+                return NAME_THE_DESTINATION
         destination = names[-1].removeprefix("refs/heads/")
         if destination in PROTECTED:
             return MAIN
-        if destination == "HEAD":  # the current branch: only when it is known and unprotected
-            if context_changed or git.unknown_repo:
+        if "HEAD" in names:  # the current branch: only when it is known and unprotected
+            if ctx.branch_changed or ctx.dir_changed or git.unknown_repo:
                 return MAIN
             branch = branch_of(git.cwd)
             if not branch or branch in PROTECTED:
@@ -197,25 +220,26 @@ def git_pushes_in(tokens: list[str]) -> int:
     return count
 
 
-def judge(command: str, depth: int = 0) -> str | None:
-    """The reason to deny a git operation in the command line, or None."""
+def judge(command: str, depth: int = 0, inherited: Context | None = None) -> str | None:
+    """The reason to deny a git operation in the command line, or None. A nested shell or eval
+    inherits the context its parent built up (Codex review: cd ... && bash -c 'git push origin HEAD')."""
     try:
         parts = segments(command)
     except ValueError:
         return UNPARSEABLE if re.search(r"\bgit\b.*\bpush\b", command) else None
-    context_changed = False
+    ctx = replace(inherited) if inherited else Context()
     for tokens in parts:
         part = " ".join(tokens)
         tokens = unwrap(tokens)
         if tokens and tokens[0] == "eval" and depth < 3:
-            if reason := judge(" ".join(tokens[1:]), depth + 1):
+            if reason := judge(" ".join(tokens[1:]), depth + 1, ctx):
                 return reason
             continue
         if tokens and tokens[0].rsplit("/", 1)[-1] in SHELLS:
             # sh -c 'script', bash -lc 'script', bash -ec 'script': the script follows the flags.
             flags = [i for i, t in enumerate(tokens[1:], 1) if re.fullmatch(r"-[a-zA-Z]*c[a-zA-Z]*", t)]
             if flags and flags[0] + 1 < len(tokens) and depth < 3:
-                if reason := judge(tokens[flags[0] + 1], depth + 1):
+                if reason := judge(tokens[flags[0] + 1], depth + 1, ctx):
                     return reason
                 continue
         git = parse_git(tokens)
@@ -224,8 +248,8 @@ def judge(command: str, depth: int = 0) -> str | None:
             # functions, a shell without -c) is refused rather than allowed by omission.
             if git_pushes_in(tokens):
                 return UNPARSEABLE
-            if CONTEXT_CHANGERS.search(part):
-                context_changed = True
+            if DIR_CHANGERS.search(part):
+                ctx.dir_changed = True
             continue
         if git.subcommand in {"commit", "merge", "rebase", "am", "cherry-pick"} and "--no-verify" in git.args:
             return NO_VERIFY
@@ -235,10 +259,10 @@ def judge(command: str, depth: int = 0) -> str | None:
         if git.subcommand == "push":
             if git_pushes_in(tokens) > 1:
                 return UNPARSEABLE
-            if reason := judge_push(git, context_changed):
+            if reason := judge_push(git, ctx):
                 return reason
         elif git.subcommand in {"switch", "checkout", "worktree"}:
-            context_changed = True
+            ctx.branch_changed = True
     return None
 
 

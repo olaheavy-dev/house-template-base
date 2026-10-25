@@ -193,3 +193,23 @@ def test_stop_hook_never_blocks_twice_in_a_row(git_repo):
     _project_with_check(repo, "@exit 1")
     (repo / "new.py").write_text("x = 1\n")
     assert run_hook("stop-checks.py", {"hook_event_name": "Stop", "stop_hook_active": True}, repo) is None
+
+
+def test_guard_bash_requires_a_destination_when_the_remote_maps_pushes(git_repo):
+    # Codex review on PR 1: remote.origin.push=refs/heads/feat/x:refs/heads/main sends a
+    # source-only push to main.
+    repo = git_repo("feat/x")
+    subprocess.run(["git", "config", "remote.origin.push", "refs/heads/feat/x:refs/heads/main"], cwd=repo, check=True)
+    assert bash_decision("git push origin feat/x", repo) == "deny"
+    assert bash_decision("git push -u origin HEAD", repo) == "deny"
+    assert bash_decision("git push origin feat/x:feat/x", repo) == "allow"
+    assert bash_decision("git push origin feat/x:main", repo) == "deny"
+
+
+def test_nested_shells_inherit_a_directory_change(git_repo):
+    # Codex review on PR 1: cd <main worktree> && bash -c 'git push origin HEAD' runs in main.
+    here, other = git_repo("feat/x"), git_repo("main")
+    assert bash_decision(f"cd {other} && bash -c 'git push origin HEAD'", here) == "deny"
+    assert bash_decision(f"cd {other} && git push origin feat/x", here) == "deny"
+    assert bash_decision(f"cd {other} && git push origin feat/x:feat/x", here) == "allow"
+    assert bash_decision("git switch feat/y && bash -c 'git push origin HEAD'", here) == "deny"
