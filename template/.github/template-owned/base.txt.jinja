@@ -1,0 +1,27 @@
+# Files owned by house-template-base. A pull request that changes one gets a CI warning
+# (tools/check_template_owned.py): improve the template first, or label it template-candidate.
+AGENTS.md
+CLAUDE.md
+Makefile
+.pre-commit-config.yaml
+.gitignore
+.gitattributes
+.editorconfig
+.claude/settings.json
+.claude/hooks/*
+.claude/rules/github-workflows.md
+.claude/rules/decisions.md
+.claude/rules/claude-config.md
+.github/template-owned/base.txt
+.github/workflows/ci.yml
+.github/workflows/workflow-lint.yml
+.github/workflows/codeql.yml
+.github/workflows/dependency-review.yml
+.github/workflows/scorecard.yml
+.github/workflows/pr-title.yml
+.github/workflows/template-update.yml
+{%- if container_images %}
+.github/workflows/publish-image.yml
+{%- endif %}
+tools/check_no_rej.py
+tools/check_template_owned.py
