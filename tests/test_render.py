@@ -35,7 +35,10 @@ def test_settings_turn_off_agent_attribution_and_bypass_mode(render):
     data = settings(render())
     assert data["attribution"] == {"commit": "", "pr": "", "sessionUrl": False}
     assert data["permissions"]["disableBypassPermissionsMode"] == "disable"
-    assert "Read(./.env)" in data["permissions"]["deny"]
+    deny = data["permissions"]["deny"]
+    assert "Read(./.env)" in deny and "Read(./.env.production)" in deny
+    # .env.example is what AGENTS.md tells agents to read, and an allow rule can't override a deny.
+    assert not any(rule.startswith("Read(./.env.*)") for rule in deny)
 
 
 def hook_entries(data: dict) -> list[tuple[str, dict]]:

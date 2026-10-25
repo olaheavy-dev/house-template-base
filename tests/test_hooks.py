@@ -167,9 +167,24 @@ def test_stop_hook_passes_when_check_fast_passes(git_repo):
     assert run_hook("stop-checks.py", {"hook_event_name": "Stop", "stop_hook_active": False}, repo) is None
 
 
-def test_stop_hook_does_nothing_without_changes(git_repo):
+def test_stop_hook_checks_commits_made_during_the_turn(git_repo):
+    # Codex review on PR 1: an agent that commits leaves git status clean.
+    repo = git_repo("feat/x")
+    _project_with_check(repo, "@echo 'types: 1 error' && exit 1")
+    (repo / "new.py").write_text("x = 1\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "wip"], cwd=repo, check=True)
+    out = run_hook("stop-checks.py", {"hook_event_name": "Stop", "stop_hook_active": False}, repo)
+    assert out and out["decision"] == "block" and "types: 1 error" in out["reason"]
+
+
+def test_stop_hook_does_nothing_without_changes(git_repo, tmp_path):
     repo = git_repo("feat/x")
     _project_with_check(repo, "@exit 1")
+    remote = tmp_path / "remote.git"  # everything pushed: nothing new to check
+    subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
+    subprocess.run(["git", "push", "-q", str(remote), "feat/x"], cwd=repo, check=True)
+    subprocess.run(["git", "fetch", "-q", str(remote), "+refs/heads/*:refs/remotes/origin/*"], cwd=repo, check=True)
     assert run_hook("stop-checks.py", {"hook_event_name": "Stop", "stop_hook_active": False}, repo) is None
 
 
