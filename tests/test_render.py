@@ -38,15 +38,28 @@ def test_settings_turn_off_agent_attribution_and_bypass_mode(render):
     assert "Read(./.env)" in data["permissions"]["deny"]
 
 
-def test_every_hook_in_settings_exists_and_is_executable(render):
+def hook_entries(data: dict) -> list[tuple[str, dict]]:
+    return [(event, h) for event, groups in data["hooks"].items() for g in groups for h in g["hooks"]]
+
+
+def test_every_hook_runs_in_exec_form_and_its_script_exists(render):
+    # Exec form passes the path as one argument, so a project path with spaces still works
+    # (https://code.claude.com/docs/en/hooks.md, "Exec form and shell form").
     project = render()
-    data = settings(project)
-    commands = [h["command"] for groups in data["hooks"].values() for g in groups for h in g["hooks"]]
-    assert len(commands) == 3
-    for command in commands:
-        path = project / command.replace("${CLAUDE_PROJECT_DIR}/", "")
-        assert path.is_file(), command
-        assert os.access(path, os.X_OK), f"{command} is not executable"
+    entries = hook_entries(settings(project))
+    assert len(entries) == 3
+    for _, hook in entries:
+        assert hook["command"] == "python3"
+        (script,) = hook["args"]
+        path = project / script.replace("${CLAUDE_PROJECT_DIR}/", "")
+        assert path.is_file(), script
+        assert os.access(path, os.X_OK), f"{script} is not executable"
+
+
+def test_guard_hooks_fail_closed_and_the_stop_hook_fails_open(render):
+    entries = hook_entries(settings(render()))
+    on_failure = {hook["args"][0].rsplit("/", 1)[-1]: hook.get("onFailure") for _, hook in entries}
+    assert on_failure == {"guard-bash.py": "block", "guard-files.py": "block", "stop-checks.py": None}
 
 
 def test_agent_kit_is_enabled_from_the_org_marketplace(render):

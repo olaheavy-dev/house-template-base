@@ -5,8 +5,9 @@ Permission rules match commands as written, so `git -C . push` or `sh -c 'git pu
 `Bash(git push *)` rule (https://code.claude.com/docs/en/permissions.md). This hook reads the full
 command and denies what must never happen, or asks for what needs a person:
 
-- deny: pushing to main, force pushes, skipping git hooks, reading .env files from the shell,
-  and commit messages that credit a coding agent (AGENTS.md rule 5)
+- deny: pushing to main (by refspec, a bare push from main, or a bulk push such as --all),
+  force pushes, skipping git hooks, reading .env files from the shell, and commit messages that
+  credit a coding agent (AGENTS.md rule 5)
 - ask: commands that discard local work (git reset --hard, git clean, git checkout -- .)
 
 Input and output follow https://code.claude.com/docs/en/hooks.md (PreToolUse decision control).
@@ -20,6 +21,7 @@ import subprocess
 import sys
 
 PROTECTED = ("main", "master")
+BULK_PUSH = {"--all", "--branches", "--mirror", "--prune"}
 
 DENY: list[tuple[str, str]] = [
     (r"\bgit\b[^;&|]*\bpush\b[^;&|]*(\s--force\b|\s-f\b|\s--force-with-lease\b|\s\+\S)",
@@ -59,7 +61,10 @@ def pushes_to_protected(command: str) -> bool:
         match = re.search(r"\bgit\b.*?\bpush\b(.*)", part)
         if not match:
             continue
-        args = [a.strip("'\"") for a in match.group(1).split() if not a.startswith("-")]
+        words = match.group(1).split()
+        if BULK_PUSH.intersection(w.split("=")[0] for w in words):
+            return True  # --all, --mirror and --prune update every branch, main included
+        args = [a.strip("'\"") for a in words if not a.startswith("-")]
         refspecs = args[1:]  # args[0] is the remote
         if not refspecs:
             if current_branch() in PROTECTED:

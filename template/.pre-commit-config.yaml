@@ -43,9 +43,10 @@ repos:
     hooks:
       - id: no-rej-files
         name: no leftover copier .rej files
-        entry: copier update left .rej files; resolve them first
-        language: fail
-        files: \.rej$
+        entry: python3 tools/check_no_rej.py
+        language: system
+        pass_filenames: false
+        always_run: true
       - id: claude-settings-json
         name: .claude/settings.json is strict JSON
         entry: python3 -c "import json,sys; [json.load(open(f)) for f in sys.argv[1:]]"
