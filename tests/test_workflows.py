@@ -121,3 +121,9 @@ def test_image_names_are_lowercase_even_when_the_owner_has_capitals(render):
     wf = workflows(render(github_org="ExampleOrg"))["publish-image.yml"]
     image = wf["jobs"]["publish"]["env"]["IMAGE"]
     assert image == "ghcr.io/exampleorg/course-lens-${{ inputs.image }}"
+
+
+def test_workflows_that_read_secrets_run_in_a_dedicated_environment(render):
+    # zizmor's secrets-outside-env: a token read by a job belongs to an environment with its own rules.
+    job = workflows(render())["template-update.yml"]["jobs"]["update"]
+    assert job["environment"] == "template-update"

@@ -32,3 +32,32 @@ jobs:
 
       - name: Run the tests
         run: uv run --frozen pytest
+
+  generated-project:
+    name: Generated project passes its checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@07a047e608db84b3d8c06cd9a7c7dcc9c355c18e # v10.3.2
+        with:
+          enable-cache: false
+
+      - name: Render a project with the default answers
+        run: uv run --frozen copier copy --trust --defaults --vcs-ref HEAD -d project_name="Demo App" . "$RUNNER_TEMP/demo"
+
+      - name: Run the project's own pre-commit checks on main
+        working-directory: ${{ runner.temp }}/demo
+        run: |
+          git init -q -b main
+          git add -A
+          git -c user.email=ci@example.com -c user.name=ci commit -q -m "chore: start from the template"
+          SKIP=no-commit-to-branch uvx "pre-commit==4.7.0" run --all-files --show-diff-on-failure
