@@ -1,0 +1,28 @@
+# Owned by house-template-base. Stack layers keep their own ignores in their directories
+# (backend/.gitignore, frontend/.gitignore), so this file has one owner.
+
+# Secrets and personal settings
+.env
+.env.*
+!.env.example
+secrets/
+*.pem
+*.key
+.claude/settings.local.json
+CLAUDE.local.md
+
+# Copier leftovers from a conflicted update
+*.rej
+*.orig
+
+# Tool caches and build output
+.artifacts/
+.cache/
+coverage/
+*.log
+
+# Editors and OS
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json

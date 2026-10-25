@@ -1,0 +1,46 @@
+#!/usr/bin/env python3
+"""Stop hook: before the agent finishes a turn that changed files, run `make check-fast`.
+
+If the checks fail, the hook blocks the stop and hands the failure back, so the agent fixes it
+instead of reporting success. It does nothing when no tracked or new files changed, and it never
+blocks twice in a row (`stop_hook_active`), so a check that can't pass can't trap the session.
+Claude Code also caps consecutive stop-hook continuations at 8.
+
+Input and output follow https://code.claude.com/docs/en/hooks.md (Stop input, Stop decision control).
+"""
+
+from __future__ import annotations
+
+import json
+import subprocess
+import sys
+
+TAIL_LINES = 60
+
+
+def has_changes() -> bool:
+    out = subprocess.run(["git", "status", "--porcelain"], capture_output=True, text=True,
+                         timeout=15, check=False)
+    return bool(out.stdout.strip())
+
+
+def main() -> int:
+    try:
+        event = json.load(sys.stdin)
+    except json.JSONDecodeError:
+        return 0
+    if event.get("stop_hook_active") or not has_changes():
+        return 0
+    run = subprocess.run(["make", "check-fast"], capture_output=True, text=True, timeout=570,
+                         check=False)
+    if run.returncode == 0:
+        return 0
+    tail = "\n".join((run.stdout + run.stderr).strip().splitlines()[-TAIL_LINES:])
+    json.dump({"decision": "block",
+               "reason": f"`make check-fast` failed on the current changes. Fix it before finishing:\n{tail}"},
+              sys.stdout)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
