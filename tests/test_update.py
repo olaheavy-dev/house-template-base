@@ -25,7 +25,10 @@ def git(cwd: Path, *args: str) -> str:
 def template_at_v010(tmp_path: Path) -> Path:
     """A scratch copy of the template, including uncommitted changes, committed and tagged v0.1.0."""
     template = tmp_path / "template-repo"
-    subprocess.run(["git", "clone", "-q", "--no-hardlinks", str(ROOT), str(template)], check=True)
+    # No tags from this repository's real releases: the test makes its own v0.1.0 and v0.2.0.
+    subprocess.run(["git", "clone", "-q", "--no-hardlinks", "--no-tags", str(ROOT), str(template)], check=True)
+    for tag in git(template, "tag", "--list").split():
+        git(template, "tag", "-d", tag)
     for path in subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "--modified"], cwd=ROOT,
                                capture_output=True, text=True, check=True).stdout.split():
         (template / path).parent.mkdir(parents=True, exist_ok=True)
