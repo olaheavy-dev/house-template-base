@@ -61,11 +61,37 @@ def test_guard_bash_denies_a_bare_push_from_main(git_repo, command):
     assert bash_decision(command, git_repo("main")) == "deny"
 
 
+def test_guard_bash_reads_the_branch_of_the_repository_git_c_points_at(git_repo):
+    # Codex review on PR 1: -C changes the repository within one git invocation.
+    here, other = git_repo("feat/x"), git_repo("main")
+    assert bash_decision(f"git -C {other} push origin", here) == "deny"
+    assert bash_decision(f"git -C {here} push origin", other) == "allow"
+
+
 def test_guard_bash_allows_a_bare_push_from_a_feature_branch(git_repo):
     assert bash_decision("git push", git_repo("feat/x")) == "allow"
 
 
 @pytest.mark.parametrize(("command", "expected"), [
+    ("git push -uf origin feat/x", "deny"),  # force inside combined short options
+    ("git push -fu origin feat/x", "deny"),
+    ("git push -u origin feat/x -f", "deny"),
+    ("git push --force-if-includes origin feat/x", "deny"),
+    ("git push -o ci.skip origin feat/x", "allow"),  # -o takes a value; not a refspec
+    ("git push --repo=origin feat/x", "allow"),
+    ("FOO=1 git push origin main", "deny"),
+    ("bash -lc 'git push origin main'", "deny"),
+    ("zsh -ec 'git push --force origin feat/x'", "deny"),
+    ("env GIT_TRACE=1 git push origin main", "deny"),
+    ("timeout 30 git push origin main", "deny"),
+    ("command git push -f origin feat/x", "deny"),
+    ("eval 'git push origin main'", "deny"),
+    ("nice -n 10 git push origin feat/x", "allow"),
+    ("bash -c 'git push origin feat/x:main'", "deny"),
+    ("git commit -m 'fix: a; b && c' && git push origin feat/x", "allow"),  # operators inside quotes
+    ("git push origin 'feat/x", "deny"),  # unbalanced quotes: fail closed
+    ("git --git-dir=../other/.git push origin", "deny"),
+    ("git --work-tree ../other push", "deny"),
     ("git switch main && git push origin", "deny"),
     ("git checkout main; git push", "deny"),
     ("cd ../other-repo && git push", "deny"),

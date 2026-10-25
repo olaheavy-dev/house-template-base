@@ -92,7 +92,7 @@ def test_answers_file_records_the_template_version_for_updates(render):
 
 def test_makefile_exposes_the_documented_targets(render):
     makefile = (render() / "Makefile").read_text()
-    for target in ("help", "install", "check", "check-fast", "repo-settings", "template-status"):
+    for target in ("help", "install", "check", "check-fast", "template-status"):
         assert f"\n{target}:" in makefile, target
     assert "-include mk/*.mk" in makefile
 

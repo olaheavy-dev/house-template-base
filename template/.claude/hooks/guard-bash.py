@@ -2,13 +2,18 @@
 """PreToolUse hook for Bash: enforce the repository's guardrails on the whole command line.
 
 Permission rules match commands as written, so `git -C . push` or `sh -c 'git push'` slip past a
-`Bash(git push *)` rule (https://code.claude.com/docs/en/permissions.md). This hook reads the full
-command and denies what must never happen, or asks for what needs a person:
+`Bash(git push *)` rule (https://code.claude.com/docs/en/permissions.md). This hook parses the
+command instead: it splits it at shell operators, tokenises each part with shell quoting rules,
+follows `sh -c` / `bash -c` into their scripts, and reads git's global options (`-C`,
+`--git-dir`, `--work-tree`) before judging a `git push`. What it can't parse, it fails closed on.
 
-- deny: pushing to main (by refspec, a bare push from main, or a bulk push such as --all),
-  force pushes, skipping git hooks, reading .env files from the shell, and commit messages that
-  credit a coding agent (AGENTS.md rule 5)
+- deny: pushing to main (by refspec, a bare push from main, a bulk push such as --all), force
+  pushes in any spelling, skipping git hooks, reading .env files from the shell, and commit
+  messages or PR text that credit a coding agent (AGENTS.md rule 5)
 - ask: commands that discard local work (git reset --hard, git clean, git checkout -- .)
+
+This is the local, early guard. The server-side boundary is the ruleset on GitHub, which rejects
+force pushes and direct pushes to main whatever runs locally.
 
 Input and output follow https://code.claude.com/docs/en/hooks.md (PreToolUse decision control).
 """
@@ -17,17 +22,20 @@ from __future__ import annotations
 
 import json
 import re
+import shlex
 import subprocess
 import sys
+from dataclasses import dataclass, field
 
-PROTECTED = ("main", "master")
-BULK_PUSH = {"--all", "--branches", "--mirror", "--prune"}
+PROTECTED = {"main", "master"}
+SHELLS = {"sh", "bash", "zsh", "dash"}
+BULK = {"--all", "--branches", "--mirror", "--prune"}
+FORCE_LONG = ("--force", "--force-with-lease", "--force-if-includes")
+PUSH_VALUE_OPTIONS = {"-o", "--push-option", "--repo", "--receive-pack", "--exec"}
+GIT_VALUE_OPTIONS = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path", "--config-env"}
+CONTEXT_CHANGERS = re.compile(r"\bgit\b.*\b(switch|checkout|worktree)\b|(^|\s)(cd|pushd|popd)(\s|$)")
 
-DENY: list[tuple[str, str]] = [
-    (r"\bgit\b[^;&|]*\bpush\b[^;&|]*(\s--force\b|\s-f\b|\s--force-with-lease\b|\s\+\S)",
-     "Force pushes are not allowed. Push a new commit instead."),
-    (r"\bgit\b[^;&|]*\b(commit|push|merge|rebase)\b[^;&|]*\s--no-verify\b",
-     "Skipping git hooks (--no-verify) is not allowed. Fix what the hook reports."),
+DENY_TEXT: list[tuple[str, str]] = [
     (r"(?i)co-authored-by:\s*[^\n]*(claude|anthropic|codex|openai|copilot|cursor|gemini|agent)",
      "Commit messages carry no coding-agent attribution (AGENTS.md rule 5)."),
     (r"(?i)generated with \[?claude",
@@ -36,60 +44,166 @@ DENY: list[tuple[str, str]] = [
      "Reading .env files is not allowed; use .env.example for names and ask the owner for values."),
 ]
 
-ASK: list[tuple[str, str]] = [
+ASK_TEXT: list[tuple[str, str]] = [
     (r"\bgit\b[^;&|]*\breset\b[^;&|]*--hard\b", "git reset --hard discards local work."),
     (r"\bgit\b[^;&|]*\bclean\b[^;&|]*\s-[a-zA-Z]*f", "git clean deletes untracked files."),
     (r"\bgit\b[^;&|]*\bcheckout\b[^;&|]*\s--\s+\.", "git checkout -- . discards local changes."),
     (r"\bgit\b[^;&|]*\brestore\b[^;&|]*\s\.(\s|$)", "git restore . discards local changes."),
 ]
 
+MAIN = "Pushing to main is not allowed. Push a named branch (git push origin <branch>) and open a pull request."
+FORCE = "Force pushes are not allowed. Push a new commit instead."
+NO_VERIFY = "Skipping git hooks (--no-verify) is not allowed. Fix what the hook reports."
+UNPARSEABLE = "This command line can't be parsed safely, so the push is refused. Run the push on its own."
 
-def current_branch() -> str:
+
+@dataclass
+class Git:
+    """One git invocation: where it runs and what it does."""
+
+    cwd: str | None = None
+    unknown_repo: bool = False  # --git-dir or --work-tree: the branch can't be read reliably
+    subcommand: str = ""
+    args: list[str] = field(default_factory=list)
+
+
+def branch_of(cwd: str | None) -> str:
     # symbolic-ref also names the branch before its first commit, where rev-parse prints "HEAD".
+    cmd = ["git"] + (["-C", cwd] if cwd else []) + ["symbolic-ref", "--quiet", "--short", "HEAD"]
     try:
-        out = subprocess.run(["git", "symbolic-ref", "--quiet", "--short", "HEAD"], capture_output=True,
-                             text=True, timeout=5, check=False)
-        return out.stdout.strip()
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=5, check=False).stdout.strip()
     except (OSError, subprocess.SubprocessError):
         return ""
 
 
-def pushes_to_protected(command: str) -> bool:
-    """True when a `git push` in the command targets a protected branch: named in a refspec's
-    destination, or, when no refspec is given, because the current branch is protected."""
-    context_changed = False  # an earlier part switched branch or directory: the branch is unknown
-    for part in re.split(r"&&|\|\||;|\||\n", command):
-        match = re.search(r"\bgit\b.*?\bpush\b(.*)", part)
-        if not match:
-            if re.search(r"\bgit\b.*\b(switch|checkout|worktree)\b|(^|\s)(cd|pushd|popd)(\s|$)", part):
+def parse_git(tokens: list[str]) -> Git | None:
+    """Read git's global options up to the subcommand. None if this isn't a git invocation."""
+    if not tokens or tokens[0].rsplit("/", 1)[-1] != "git":
+        return None
+    git, i = Git(), 1
+    while i < len(tokens) and tokens[i].startswith("-"):
+        opt, _, inline = tokens[i].partition("=")
+        value = inline or (tokens[i + 1] if opt in GIT_VALUE_OPTIONS and not inline and i + 1 < len(tokens) else "")
+        if opt == "-C":
+            git.cwd = value if git.cwd is None or value.startswith("/") else f"{git.cwd}/{value}"
+        elif opt in {"--git-dir", "--work-tree"}:
+            git.unknown_repo = True
+        i += 2 if opt in GIT_VALUE_OPTIONS and not inline else 1
+    if i < len(tokens):
+        git.subcommand, git.args = tokens[i], tokens[i + 1:]
+    return git
+
+
+def judge_push(git: Git, context_changed: bool) -> str | None:
+    positional, i = [], 0
+    while i < len(git.args):
+        arg = git.args[i]
+        opt = arg.split("=", 1)[0]
+        if opt in BULK:
+            return MAIN
+        if opt.startswith(FORCE_LONG) or (re.fullmatch(r"-[a-zA-Z]+", arg) and "f" in arg[1:]):
+            return FORCE
+        if opt == "--no-verify":
+            return NO_VERIFY
+        if opt in PUSH_VALUE_OPTIONS and "=" not in arg:
+            i += 2
+            continue
+        if not arg.startswith("-"):
+            positional.append(arg)
+        i += 1
+    refspecs = positional[1:]  # positional[0] is the remote
+    if any(spec.startswith("+") for spec in refspecs):
+        return FORCE
+    if not refspecs:
+        # A bare push uses the current branch: unknowable after a branch or directory change
+        # earlier on the command line, or with --git-dir / --work-tree. Fail closed then.
+        if context_changed or git.unknown_repo or branch_of(git.cwd) in PROTECTED:
+            return MAIN
+        return None
+    for spec in refspecs:
+        destination = spec.split(":")[-1].removeprefix("refs/heads/")
+        if destination in PROTECTED:
+            return MAIN
+        if destination == "HEAD" and (context_changed or git.unknown_repo or branch_of(git.cwd) in PROTECTED):
+            return MAIN
+    return None
+
+
+WRAPPERS = {"env", "command", "exec", "nice", "nohup", "time", "sudo", "doas", "timeout", "stdbuf"}
+
+
+def unwrap(tokens: list[str]) -> list[str]:
+    """Drop leading VAR=value assignments and wrapper commands (env, nice, timeout 10, ...)."""
+    while tokens:
+        head = tokens[0].rsplit("/", 1)[-1]
+        if re.fullmatch(r"\w+=.*", tokens[0]):
+            tokens = tokens[1:]
+        elif head in WRAPPERS:
+            tokens = tokens[1:]
+            while tokens and (tokens[0].startswith("-") or re.fullmatch(r"[\d.]+[smhd]?|\w+=.*", tokens[0])):
+                tokens = tokens[1:]  # the wrapper's own options and arguments (timeout 10, env -i A=1)
+        else:
+            break
+    return tokens
+
+
+def segments(command: str) -> list[list[str]]:
+    """Tokenise with shell quoting and split at operators (;, &&, ||, |, &) outside quotes.
+    Raises ValueError on unbalanced quotes."""
+    lexer = shlex.shlex(command.replace("\n", " ; "), posix=True, punctuation_chars=";&|")
+    lexer.whitespace_split = True
+    parts: list[list[str]] = [[]]
+    for token in lexer:
+        if token and set(token) <= set(";&|"):
+            parts.append([])
+        else:
+            parts[-1].append(token)
+    return [p for p in parts if p]
+
+
+def judge(command: str, depth: int = 0) -> str | None:
+    """The reason to deny a git operation in the command line, or None."""
+    try:
+        parts = segments(command)
+    except ValueError:
+        return UNPARSEABLE if re.search(r"\bgit\b.*\bpush\b", command) else None
+    context_changed = False
+    for tokens in parts:
+        part = " ".join(tokens)
+        tokens = unwrap(tokens)
+        if tokens and tokens[0] == "eval" and depth < 3:
+            if reason := judge(" ".join(tokens[1:]), depth + 1):
+                return reason
+            continue
+        if tokens and tokens[0].rsplit("/", 1)[-1] in SHELLS:
+            # sh -c 'script', bash -lc 'script', bash -ec 'script': the script follows the flags.
+            flags = [i for i, t in enumerate(tokens[1:], 1) if re.fullmatch(r"-[a-zA-Z]*c[a-zA-Z]*", t)]
+            if flags and flags[0] + 1 < len(tokens) and depth < 3:
+                if reason := judge(tokens[flags[0] + 1], depth + 1):
+                    return reason
+            continue
+        git = parse_git(tokens)
+        if git is None:
+            if CONTEXT_CHANGERS.search(part):
                 context_changed = True
             continue
-        words = match.group(1).split()
-        if BULK_PUSH.intersection(w.split("=")[0] for w in words):
-            return True  # --all, --mirror and --prune update every branch, main included
-        args = [a.strip("'\"") for a in words if not a.startswith("-")]
-        refspecs = args[1:]  # args[0] is the remote
-        if not refspecs:
-            # Fail closed: after a branch or directory change in the same command line, the
-            # branch a bare push runs from can't be known before it runs.
-            if context_changed or current_branch() in PROTECTED:
-                return True
-            continue
-        for spec in refspecs:
-            destination = spec.split(":")[-1].removeprefix("refs/heads/")
-            if destination in PROTECTED or (destination == "HEAD" and current_branch() in PROTECTED):
-                return True
-    return False
+        if git.subcommand in {"commit", "merge", "rebase", "am", "cherry-pick"} and "--no-verify" in git.args:
+            return NO_VERIFY
+        if git.subcommand == "push":
+            if reason := judge_push(git, context_changed):
+                return reason
+        elif git.subcommand in {"switch", "checkout", "worktree"}:
+            context_changed = True
+    return None
 
 
 def decide(command: str) -> tuple[str, str] | None:
-    if pushes_to_protected(command):
-        return "deny", ("Pushing to main is not allowed. Push a named branch (git push origin <branch>) "
-                        "and open a pull request.")
-    for pattern, reason in DENY:
+    if reason := judge(command):
+        return "deny", reason
+    for pattern, reason in DENY_TEXT:
         if re.search(pattern, command):
             return "deny", reason
-    for pattern, reason in ASK:
+    for pattern, reason in ASK_TEXT:
         if re.search(pattern, command):
             return "ask", reason
     return None

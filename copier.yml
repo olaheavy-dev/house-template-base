@@ -21,7 +21,6 @@ _message_after_copy: |
     2. Apply the stack layers, each with its own answers file, for example:
        copier copy --trust -a .copier-answers.fastapi.yml gh:{{ github_org }}/house-template-fastapi .
     3. make install && make check
-    4. After the GitHub repository exists: make repo-settings (rulesets and security settings)
 
 project_name:
   type: str

@@ -14,4 +14,4 @@ Owned by house-template-base. Sources: GitHub's secure-use reference (https://do
 - No `pull_request_target` or `workflow_run` on untrusted code. Pass untrusted values (`github.event.*` titles, bodies, branch names) through `env:`, never inline `${{ }}` in `run:`.
 - Docker images in workflows are pinned by digest.
 - `make check` runs actionlint and zizmor (pedantic) on every workflow; fix findings rather than silencing them, and explain any `# zizmor: ignore[...]` in the same comment.
-- Rulesets live in `.github/rulesets/` and are applied with `make repo-settings`; changing them is owner-only (AGENTS.md, "When merging").
+- Repository rulesets are owner-only to change (AGENTS.md, "When merging").
