@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.2](https://github.com/olaheavy-dev/house-template-base/compare/v0.1.1...v0.1.2) (2026-10-25)
+
+
+### Bug Fixes
+
+* open template-update PRs with a token and keep Actions PR creation off ([#12](https://github.com/olaheavy-dev/house-template-base/issues/12)) ([c290ccf](https://github.com/olaheavy-dev/house-template-base/commit/c290ccffa8ac132cae8954cf9aaee3841d23736a))
+
 ## [0.1.1](https://github.com/olaheavy-dev/house-template-base/compare/v0.1.0...v0.1.1) (2026-10-25)
 
 
