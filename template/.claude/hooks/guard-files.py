@@ -12,12 +12,16 @@ Output follows https://code.claude.com/docs/en/hooks.md (PreToolUse decision con
 
 from __future__ import annotations
 
+import fnmatch
 import json
 import re
 import sys
 from pathlib import PurePath
 
 WRITE_TOOLS = {"Edit", "Write", "NotebookEdit"}
+# Names a Grep glob is tested against: an explicit glob makes ripgrep search ignored and hidden
+# files, so a glob that could match one of these would return secret contents.
+SECRET_SAMPLES = (".env", ".env.local", ".env.prod", ".env.backup", "backend/.env", "secrets/token", "server.pem")
 
 # (pattern, applies to reads too, reason)
 RULES: list[tuple[str, bool, str]] = [
@@ -38,8 +42,16 @@ def main() -> int:
     tool = event.get("tool_name") or ""
     tool_input = event.get("tool_input") or {}
     path = tool_input.get("file_path") or tool_input.get("notebook_path") or tool_input.get("path") or ""
-    posix = PurePath(path).as_posix()
+    # Case-insensitive: macOS and Windows filesystems open .ENV as .env.
+    posix = PurePath(path).as_posix().lower()
     writing = tool in WRITE_TOOLS
+    glob = str(tool_input.get("glob") or "").lower()
+    if tool == "Grep" and glob and any(fnmatch.fnmatch(name, glob) or fnmatch.fnmatch(name.rsplit("/", 1)[-1], glob)
+                                       for name in SECRET_SAMPLES):
+        json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                          "permissionDecisionReason": f"The glob `{glob}` could match secret files "
+                                          "(.env, secrets/, keys); use a narrower glob such as *.py."}}, sys.stdout)
+        return 0
     for pattern, applies_to_reads, reason in RULES:
         if (writing or applies_to_reads) and re.search(pattern, posix):
             json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse",

@@ -156,10 +156,32 @@ def test_guard_files(tmp_path, path, expected):
     ("Read", "file_path", ".copier-answers.base.yml", "allow"),  # read yes, edit no
     ("Grep", "path", "backend/.env", "deny"),
     ("Grep", "path", "backend", "allow"),
+    ("Read", "file_path", ".ENV", "deny"),  # case-insensitive filesystems
+    ("Read", "file_path", ".Env.Prod", "deny"),
+    ("Read", "file_path", "deploy/Server.PEM", "deny"),
+    ("Read", "file_path", ".env.Example", "allow"),
 ])
 def test_guard_files_on_reads(tmp_path, tool, key, path, expected):
     out = run_hook("guard-files.py", {"tool_name": tool, "tool_input": {key: f"/repo/{path}"}}, tmp_path)
     assert ("deny" if out else "allow") == expected
+
+
+@pytest.mark.parametrize(("glob", "expected"), [
+    # Re-review on PR 1: an explicit glob makes ripgrep search ignored and hidden files.
+    (".env*", "deny"),
+    ("*", "deny"),
+    ("*backup", "deny"),
+    ("*.pem", "deny"),
+    ("*.py", "allow"),
+    ("**/*.ts", "allow"),
+    ("*.{md,txt}", "allow"),
+])
+def test_guard_files_on_grep_globs(tmp_path, glob, expected):
+    event = {"tool_name": "Grep", "tool_input": {"pattern": "KEY", "path": "/repo", "glob": glob}}
+    out = run_hook("guard-files.py", event, tmp_path)
+    assert ("deny" if out else "allow") == expected
+
+
 
 
 def _project_with_check(repo: Path, recipe: str) -> None:
@@ -208,6 +230,19 @@ def test_stop_hook_does_nothing_without_changes(git_repo, tmp_path):
     repo = git_repo("feat/x")
     _project_with_check(repo, "@exit 1")
     _with_remote(repo, tmp_path)  # everything pushed: nothing new to check
+    assert run_hook("stop-checks.py", {"hook_event_name": "Stop", "stop_hook_active": False}, repo) is None
+
+
+def test_stop_hook_ignores_pushed_commits_when_the_upstream_is_main(git_repo, tmp_path):
+    # Re-review on PR 1: a branch started from origin/main tracks it, so pushed work looks "ahead".
+    repo = git_repo("main")
+    _project_with_check(repo, "@exit 1")
+    _with_remote(repo, tmp_path)
+    subprocess.run(["git", "switch", "-q", "-c", "feat/x", "--track", "origin/main"], cwd=repo, check=True)
+    (repo / "x.py").write_text("x = 1\n")
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.email=t@t", "-c", "user.name=t", "commit", "-q", "-m", "x"], cwd=repo, check=True)
+    subprocess.run(["git", "push", "-q", "origin", "feat/x"], cwd=repo, check=True)
     assert run_hook("stop-checks.py", {"hook_event_name": "Stop", "stop_hook_active": False}, repo) is None
 
 

@@ -24,11 +24,9 @@ def git(*args: str) -> str:
 
 
 def unpushed_commits() -> bool:
-    """Commits on this branch that its upstream doesn't have yet. Without an upstream, commits no
-    remote has; in a repository with no remote at all, none (before the first push every commit
-    would count, and checks would run on every stop)."""
-    if git("rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"):
-        return bool(git("log", "@{upstream}..HEAD", "--oneline", "-1"))
+    """Commits on this branch that no remote has yet. Not compared with @{upstream}: a branch
+    started from origin/main tracks it, so pushed commits would still look "ahead". In a
+    repository with no remote at all, none count (before the first push every commit would)."""
     if git("for-each-ref", "--count=1", "refs/remotes"):
         return bool(git("log", "HEAD", "--not", "--remotes", "--oneline", "-1"))
     return False
