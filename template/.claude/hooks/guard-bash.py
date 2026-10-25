@@ -122,6 +122,9 @@ def judge_push(git: Git, context_changed: bool) -> str | None:
         return None
     for spec in refspecs:
         destination = spec.split(":")[-1].removeprefix("refs/heads/")
+        # ":" pushes every matching branch and a wildcard pushes many: either can update main.
+        if spec == ":" or destination == "" or "*" in spec:
+            return MAIN
         if destination in PROTECTED:
             return MAIN
         if destination == "HEAD" and (context_changed or git.unknown_repo or branch_of(git.cwd) in PROTECTED):
