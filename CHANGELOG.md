@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.3](https://github.com/olaheavy-dev/house-template-base/compare/v0.1.2...v0.1.3) (2026-10-25)
+
+
+### Bug Fixes
+
+* say none when a project uses the base layer alone ([#14](https://github.com/olaheavy-dev/house-template-base/issues/14)) ([a4f41a7](https://github.com/olaheavy-dev/house-template-base/commit/a4f41a7440f98d58a76ceb95355c5066ee96399b))
+
 ## [0.1.2](https://github.com/olaheavy-dev/house-template-base/compare/v0.1.1...v0.1.2) (2026-10-25)
 
 
