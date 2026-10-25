@@ -33,7 +33,7 @@ MAX_FILES, MAX_SECONDS = 200_000, 3.0
 RULES: list[tuple[str, bool, str]] = [
     (r"(^|/)\.env(\.(?!example$)[^/]+)?$", True,
      "Secret env files are off limits to agents; use .env.example for names and ask the owner for values."),
-    (r"(^|/)secrets/", True, "Files under secrets/ are off limits to agents."),
+    (r"(^|/)secrets(/|$)", True, "The secrets/ folder and its files are off limits to agents."),
     (r"\.(pem|key|p12|pfx)$", True, "Private keys are off limits to agents."),
     (r"(^|/)\.copier-answers\.[\w-]+\.yml$", False,
      "Copier answers files are never edited by hand; run `copier update -a <file> --data key=value`."),
