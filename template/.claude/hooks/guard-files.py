@@ -14,14 +14,18 @@ from __future__ import annotations
 
 import fnmatch
 import json
+import os
 import re
 import sys
-from pathlib import PurePath
+import time
+from pathlib import Path, PurePath
 
 WRITE_TOOLS = {"Edit", "Write", "NotebookEdit"}
-# Names a Grep glob is tested against: an explicit glob makes ripgrep search ignored and hidden
-# files, so a glob that could match one of these would return secret contents.
-SECRET_SAMPLES = (".env", ".env.local", ".env.prod", ".env.backup", "backend/.env", "secrets/token", "server.pem")
+# An explicit Grep glob makes ripgrep search ignored and hidden files too, so the hook lists the
+# files the glob would reach and refuses if any is a secret. Dependency and VCS folders are skipped;
+# a listing that runs too long fails closed.
+SKIP_DIRS = {".git", "node_modules", ".venv", "__pycache__", ".next", "bin", "obj"}
+MAX_FILES, MAX_SECONDS = 200_000, 3.0
 
 # (pattern, applies to reads too, reason)
 RULES: list[tuple[str, bool, str]] = [
@@ -32,6 +36,47 @@ RULES: list[tuple[str, bool, str]] = [
     (r"(^|/)\.copier-answers\.[\w-]+\.yml$", False,
      "Copier answers files are never edited by hand; run `copier update -a <file> --data key=value`."),
 ]
+
+
+def expand_braces(glob: str) -> list[str]:
+    """`{a,b}` alternatives as ripgrep reads them (fnmatch has no braces). Nested braces expand too."""
+    match = re.search(r"\{([^{}]*)\}", glob)
+    if not match:
+        return [glob]
+    head, tail = glob[:match.start()], glob[match.end():]
+    return [out for option in match.group(1).split(",") for out in expand_braces(head + option + tail)]
+
+
+def is_secret(rel: str) -> bool:
+    return any(applies and re.search(pattern, "/" + rel) for pattern, applies, _ in RULES)
+
+
+def grep_reaches_secret(base: Path, glob: str) -> bool:
+    """True when a file under `base` that `glob` selects is a secret, or the listing can't finish.
+    fnmatch's `*` also crosses `/`, so it can over-match ripgrep: that errs towards refusing."""
+    options = expand_braces(glob.lower())
+    def selected(rel: str) -> bool:
+        name = rel.rsplit("/", 1)[-1]
+        return any(fnmatch.fnmatch(rel, o) or fnmatch.fnmatch(name, o) for o in options)
+    if base.is_file():
+        rel = base.name.lower()
+        return selected(rel) and is_secret(rel)
+    started, seen = time.monotonic(), 0
+    for folder, dirs, files in os.walk(base):
+        dirs[:] = [d for d in dirs if d not in SKIP_DIRS]
+        for file in files:
+            seen += 1
+            if seen > MAX_FILES or time.monotonic() - started > MAX_SECONDS:
+                return True  # fail closed
+            rel = os.path.relpath(os.path.join(folder, file), base).replace(os.sep, "/").lower()
+            if selected(rel) and is_secret(rel):
+                return True
+    return False
+
+
+def deny(reason: str) -> None:
+    json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
+                                      "permissionDecisionReason": reason}}, sys.stdout)
 
 
 def main() -> int:
@@ -45,18 +90,16 @@ def main() -> int:
     # Case-insensitive: macOS and Windows filesystems open .ENV as .env.
     posix = PurePath(path).as_posix().lower()
     writing = tool in WRITE_TOOLS
-    glob = str(tool_input.get("glob") or "").lower()
-    if tool == "Grep" and glob and any(fnmatch.fnmatch(name, glob) or fnmatch.fnmatch(name.rsplit("/", 1)[-1], glob)
-                                       for name in SECRET_SAMPLES):
-        json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny",
-                                          "permissionDecisionReason": f"The glob `{glob}` could match secret files "
-                                          "(.env, secrets/, keys); use a narrower glob such as *.py."}}, sys.stdout)
-        return 0
+    glob = str(tool_input.get("glob") or "")
+    if tool == "Grep" and glob:
+        base = Path(path) if path else Path(event.get("cwd") or ".")
+        if grep_reaches_secret(base, glob):
+            deny(f"The glob `{glob}` reaches secret files (.env, secrets/, keys), which an explicit glob "
+                 "searches even when git ignores them. Use a narrower glob.")
+            return 0
     for pattern, applies_to_reads, reason in RULES:
         if (writing or applies_to_reads) and re.search(pattern, posix):
-            json.dump({"hookSpecificOutput": {"hookEventName": "PreToolUse",
-                                              "permissionDecision": "deny",
-                                              "permissionDecisionReason": reason}}, sys.stdout)
+            deny(reason)
             break
     return 0
 

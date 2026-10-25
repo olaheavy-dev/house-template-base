@@ -167,21 +167,30 @@ def test_guard_files_on_reads(tmp_path, tool, key, path, expected):
 
 
 @pytest.mark.parametrize(("glob", "expected"), [
-    # Re-review on PR 1: an explicit glob makes ripgrep search ignored and hidden files.
+    # Re-reviews on PR 1: an explicit glob makes ripgrep search ignored and hidden files, so the
+    # hook lists what the glob reaches instead of guessing from sample names.
     (".env*", "deny"),
     ("*", "deny"),
     ("*backup", "deny"),
-    ("*.pem", "deny"),
+    ("{*.py,.env*}", "deny"),  # brace alternatives
+    ("*.docker", "deny"),  # .env.docker
+    (".env.d*", "deny"),
+    ("*.key", "deny"),
+    ("secrets/**", "deny"),
     ("*.py", "allow"),
     ("**/*.ts", "allow"),
     ("*.{md,txt}", "allow"),
+    (".env.example", "allow"),
 ])
 def test_guard_files_on_grep_globs(tmp_path, glob, expected):
-    event = {"tool_name": "Grep", "tool_input": {"pattern": "KEY", "path": "/repo", "glob": glob}}
+    repo = tmp_path / "repo"
+    for name in (".env.backup", ".env.docker", ".env.example", "deploy/a.key", "secrets/token",
+                 "app/main.py", "web/page.ts", "README.md"):
+        (repo / name).parent.mkdir(parents=True, exist_ok=True)
+        (repo / name).write_text("x\n")
+    event = {"tool_name": "Grep", "tool_input": {"pattern": "KEY", "path": str(repo), "glob": glob}}
     out = run_hook("guard-files.py", event, tmp_path)
     assert ("deny" if out else "allow") == expected
-
-
 
 
 def _project_with_check(repo: Path, recipe: str) -> None:
