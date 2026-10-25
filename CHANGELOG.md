@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.0](https://github.com/olaheavy-dev/house-template-base/compare/v0.1.4...v0.2.0) (2026-10-25)
+
+
+### Features
+
+* root compose.yaml that includes each stack layer's compose file ([#18](https://github.com/olaheavy-dev/house-template-base/issues/18)) ([c8089fe](https://github.com/olaheavy-dev/house-template-base/commit/c8089fe9f42b1ae748008b84eb40f0e73e9f2ea3))
+
 ## [0.1.4](https://github.com/olaheavy-dev/house-template-base/compare/v0.1.3...v0.1.4) (2026-10-25)
 
 
