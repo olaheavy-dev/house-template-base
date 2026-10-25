@@ -14,6 +14,7 @@ _envops:
 # The project owns these after the first copy; updates never overwrite them.
 _skip_if_exists:
   - README.md
+  - LICENSE
   - docs/decisions/README.md
 _message_after_copy: |
   {{ project_name }} is ready. Next:
@@ -21,6 +22,7 @@ _message_after_copy: |
     2. Apply the stack layers, each with its own answers file, for example:
        copier copy --trust -a .copier-answers.fastapi.yml gh:{{ github_org }}/house-template-fastapi .
     3. make install && make check
+    4. After the GitHub repository exists: make repo-settings (rulesets and security settings)
 
 project_name:
   type: str

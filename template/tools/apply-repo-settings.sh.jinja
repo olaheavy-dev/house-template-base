@@ -1,0 +1,68 @@
+#!/usr/bin/env bash
+# Apply the repository's settings as code: merge rules, security features, the Actions policy,
+# the rulesets in .github/rulesets/ and the labels the workflows use. Safe to run again: each step
+# sets the desired state. Owner only (needs admin on the repository). Run with `make repo-settings`.
+#
+# What GitHub doesn't expose to the API is listed at the end as manual steps.
+set -euo pipefail
+
+REPO="${REPO:-{{ github_org }}/{{ project_slug }}}"
+api() { gh api -H "X-GitHub-Api-Version: 2022-11-28" "$@"; }
+
+echo "Settings for ${REPO}"
+
+echo "- merges: squash only, PR title as the commit, delete merged branches"
+api -X PATCH "repos/${REPO}" --silent \
+  -F allow_squash_merge=true -F allow_merge_commit=false -F allow_rebase_merge=false \
+  -F delete_branch_on_merge=true -f squash_merge_commit_title=PR_TITLE -f squash_merge_commit_message=PR_BODY \
+  -F has_wiki=false -F has_projects=false
+
+echo "- secret scanning with push protection, generic patterns and validity checks"
+api -X PATCH "repos/${REPO}" --silent --input - <<'JSON'
+{"security_and_analysis": {
+  "secret_scanning": {"status": "enabled"},
+  "secret_scanning_push_protection": {"status": "enabled"},
+  "secret_scanning_non_provider_patterns": {"status": "enabled"},
+  "secret_scanning_validity_checks": {"status": "enabled"}}}
+JSON
+
+echo "- Dependabot alerts and security updates, private vulnerability reporting"
+api -X PUT "repos/${REPO}/vulnerability-alerts" --silent
+api -X PUT "repos/${REPO}/automated-security-fixes" --silent
+api -X PUT "repos/${REPO}/private-vulnerability-reporting" --silent
+
+echo "- Actions: read-only default token, actions pinned to full commit SHAs"
+api -X PUT "repos/${REPO}/actions/permissions/workflow" --silent \
+  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false
+api -X PUT "repos/${REPO}/actions/permissions" --silent \
+  -F enabled=true -f allowed_actions=all -F sha_pinning_required=true
+
+echo "- immutable releases"
+api -X PUT "repos/${REPO}/immutable-releases" --silent
+
+for file in .github/rulesets/*.json; do
+  name=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "$file")
+  id=$(api "repos/${REPO}/rulesets" --jq ".[] | select(.name == \"${name}\") | .id")
+  if [ -n "$id" ]; then
+    echo "- ruleset ${name}: update (${id})"
+    api -X PUT "repos/${REPO}/rulesets/${id}" --input "$file" --silent
+  else
+    echo "- ruleset ${name}: create"
+    api -X POST "repos/${REPO}/rulesets" --input "$file" --silent
+  fi
+done
+
+echo "- labels"
+label() { gh label create "$1" --repo "$REPO" --color "$2" --description "$3" --force >/dev/null; }
+label template-candidate 5319E7 "A generic improvement to carry upstream to a template layer"
+label template-update 0E8A16 "Changes from a template layer"
+label noticed FBCA04 "Noticed while working on something else"
+label review-followup D93F0B "A deferred review finding"
+label decision 1D76DB "Needs a decision or a decision record"
+
+cat <<'EOF'
+Done. Not available through the API, so do these once in the repository settings:
+  - Code security: turn on CodeQL default setup only if you remove .github/workflows/codeql.yml
+    (the two conflict); keep the workflow as it is otherwise.
+  - Secrets: add TEMPLATE_UPDATE_TOKEN if template update PRs should start CI immediately.
+EOF

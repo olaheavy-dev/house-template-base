@@ -1,0 +1,102 @@
+# Owned by house-template-base. Weekly updates with a 7-day cooldown (new releases wait a week, so
+# a compromised release is usually caught before it lands), minor and patch updates grouped, majors
+# separate. Security updates skip the cooldown. Stack directories follow the layer conventions:
+# backend/ (fastapi), frontend/ (nextjs), the repository root for .NET.
+# https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels: [dependencies]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      actions:
+        patterns: ["*"]
+
+  - package-ecosystem: pre-commit
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels: [dependencies]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      pre-commit-hooks:
+        patterns: ["*"]
+{%- if 'fastapi' in stacks %}
+
+  - package-ecosystem: uv
+    directory: /backend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels: [dependencies]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      python-minor-and-patch:
+        update-types: [minor, patch]
+      python-major:
+        update-types: [major]
+{%- endif %}
+{%- if 'nextjs' in stacks %}
+
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels: [dependencies]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      npm-minor-and-patch:
+        update-types: [minor, patch]
+      npm-major:
+        update-types: [major]
+{%- endif %}
+{%- if 'dotnet' in stacks %}
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels: [dependencies]
+    commit-message:
+      prefix: chore
+      include: scope
+    groups:
+      nuget-minor-and-patch:
+        update-types: [minor, patch]
+      nuget-major:
+        update-types: [major]
+{%- endif %}
+{%- if container_images %}
+
+  - package-ecosystem: docker
+    directories: ["/**"]
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    labels: [dependencies]
+    commit-message:
+      prefix: chore
+      include: scope
+{%- endif %}
