@@ -16,6 +16,8 @@ import fnmatch
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import time
 from pathlib import Path, PurePath
@@ -51,10 +53,47 @@ def is_secret(rel: str) -> bool:
     return any(applies and re.search(pattern, "/" + rel) for pattern, applies, _ in RULES)
 
 
+def ripgrep_files(base: Path, glob: str) -> list[str] | None:
+    """The files Grep would search for this glob, listed by ripgrep itself (exact glob semantics:
+    braces, `**`, `[^...]`, ignored folders not entered). None when ripgrep isn't installed;
+    ["<unlisted>"] (treated as a secret) when it fails or times out, so the hook fails closed."""
+    rg = shutil.which("rg")
+    if not rg:
+        return None
+    # Run from the search folder with a relative target: ripgrep matches a glob against the path as
+    # given, so an absolute target would never match a relative glob such as secrets/**.
+    root, target = (base, ".") if base.is_dir() else (base.parent, base.name)
+    try:
+        run = subprocess.run([rg, "--files", "--hidden", "--glob", glob, target], cwd=root,
+                             capture_output=True, text=True, timeout=MAX_SECONDS, check=False)
+    except (OSError, subprocess.SubprocessError):
+        return ["<unlisted>"]
+    if run.returncode not in (0, 1):  # 1 means no files matched
+        return ["<unlisted>"]
+    return [f.removeprefix("./").replace(os.sep, "/").lower() for f in run.stdout.splitlines() if f]
+
+
+def fnmatch_options(glob: str) -> list[str]:
+    """ripgrep's glob, approximated for fnmatch: braces expanded, `[^` read as `[!`, and `**/x`
+    also tried as `x` (ripgrep matches it at the root too)."""
+    options = []
+    for option in expand_braces(glob.lower().replace("[^", "[!")):
+        options.append(option)
+        if option.startswith("**/"):
+            options.append(option[3:])
+        if "/**/" in option:
+            options.append(option.replace("/**/", "/"))
+    return options
+
+
 def grep_reaches_secret(base: Path, glob: str) -> bool:
     """True when a file under `base` that `glob` selects is a secret, or the listing can't finish.
-    fnmatch's `*` also crosses `/`, so it can over-match ripgrep: that errs towards refusing."""
-    options = expand_braces(glob.lower())
+    Uses ripgrep when installed; otherwise walks the folder with fnmatch, whose `*` also crosses
+    `/`, so it over-matches rather than under-matches."""
+    listed = ripgrep_files(base, glob)
+    if listed is not None:
+        return any(rel == "<unlisted>" or is_secret(rel) for rel in listed)
+    options = fnmatch_options(glob)
     def selected(rel: str) -> bool:
         name = rel.rsplit("/", 1)[-1]
         return any(fnmatch.fnmatch(rel, o) or fnmatch.fnmatch(name, o) for o in options)

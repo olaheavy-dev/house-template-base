@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
 import subprocess
 import sys
 from pathlib import Path
@@ -175,22 +177,45 @@ def test_guard_files_on_reads(tmp_path, tool, key, path, expected):
     ("{*.py,.env*}", "deny"),  # brace alternatives
     ("*.docker", "deny"),  # .env.docker
     (".env.d*", "deny"),
+    ("**/.env*", "deny"),  # ripgrep's **/ also matches the root
+    ("[^x]env*", "deny"),  # ripgrep's negated class
     ("*.key", "deny"),
-    ("secrets/**", "deny"),
+    ("secrets/**", "ignored-folder"),  # see below
     ("*.py", "allow"),
     ("**/*.ts", "allow"),
     ("*.{md,txt}", "allow"),
     (".env.example", "allow"),
 ])
-def test_guard_files_on_grep_globs(tmp_path, glob, expected):
+@pytest.mark.parametrize("with_ripgrep", [True, False], ids=["ripgrep", "fnmatch-fallback"])
+def test_guard_files_on_grep_globs(tmp_path, glob, expected, with_ripgrep, monkeypatch):
+    if with_ripgrep and not shutil.which("rg"):
+        pytest.skip("ripgrep not installed")
+    if not with_ripgrep:  # hide ripgrep from the hook to exercise the fallback
+        monkeypatch.setenv("PATH", os.pathsep.join(p for p in os.environ["PATH"].split(os.pathsep)
+                                                   if not (Path(p) / "rg").exists()))
     repo = tmp_path / "repo"
     for name in (".env.backup", ".env.docker", ".env.example", "deploy/a.key", "secrets/token",
                  "app/main.py", "web/page.ts", "README.md"):
         (repo / name).parent.mkdir(parents=True, exist_ok=True)
         (repo / name).write_text("x\n")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    (repo / ".gitignore").write_text(".env.*\n!.env.example\n*.key\nsecrets/\n")
     event = {"tool_name": "Grep", "tool_input": {"pattern": "KEY", "path": str(repo), "glob": glob}}
     out = run_hook("guard-files.py", event, tmp_path)
+    if expected == "ignored-folder":
+        # ripgrep doesn't enter a gitignored folder even with an explicit glob, so Grep can't reach
+        # secrets/ and ripgrep's answer (allow) is exact; the fnmatch fallback over-matches (deny).
+        expected = "allow" if with_ripgrep else "deny"
     assert ("deny" if out else "allow") == expected
+
+
+def test_grep_glob_into_an_unignored_secrets_folder_is_refused(tmp_path):
+    repo = tmp_path / "repo"
+    (repo / "secrets").mkdir(parents=True)
+    (repo / "secrets" / "token").write_text("x\n")
+    subprocess.run(["git", "init", "-q"], cwd=repo, check=True)
+    event = {"tool_name": "Grep", "tool_input": {"pattern": "x", "path": str(repo), "glob": "secrets/**"}}
+    assert run_hook("guard-files.py", event, tmp_path) is not None
 
 
 def _project_with_check(repo: Path, recipe: str) -> None:
