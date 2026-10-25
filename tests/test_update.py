@@ -29,8 +29,11 @@ def template_at_v010(tmp_path: Path) -> Path:
     subprocess.run(["git", "clone", "-q", "--no-hardlinks", "--no-tags", str(ROOT), str(template)], check=True)
     for tag in git(template, "tag", "--list").split():
         git(template, "tag", "-d", tag)
-    for path in subprocess.run(["git", "ls-files", "--others", "--exclude-standard", "--modified"], cwd=ROOT,
-                               capture_output=True, text=True, check=True).stdout.split():
+    # -z: template file names contain spaces ("{% if ... %}compose.yaml{% endif %}.jinja").
+    for path in subprocess.run(["git", "ls-files", "-z", "--others", "--exclude-standard", "--modified"],
+                               cwd=ROOT, capture_output=True, text=True, check=True).stdout.split("\0"):
+        if not path:
+            continue
         (template / path).parent.mkdir(parents=True, exist_ok=True)
         (template / path).write_bytes((ROOT / path).read_bytes())
     git(template, "add", "-A")
