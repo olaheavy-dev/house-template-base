@@ -1,0 +1,61 @@
+# Owned by house-template-base. Revisions are commit SHAs with the release in a comment; Dependabot
+# keeps them current (package-ecosystem: pre-commit). Works with pre-commit and with prek.
+# Commit stage: hygiene, secrets and workflow lint on changed files. Pre-push stage: `make check-fast`,
+# which runs each stack layer's quick checks (mk/<layer>.mk).
+default_install_hook_types: [pre-commit, pre-push]
+default_stages: [pre-commit]
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: 3e8a8703264a2f4a69428a0aa4dcb512790b2c8c # frozen: v6.0.0
+    hooks:
+      - id: check-merge-conflict
+      - id: check-yaml
+        args: [--allow-multiple-documents]
+      - id: check-json
+      - id: check-toml
+      - id: check-added-large-files
+        args: [--maxkb=1024]
+      - id: detect-private-key
+      - id: end-of-file-fixer
+      - id: trailing-whitespace
+        args: [--markdown-linebreak-ext=md]
+      - id: no-commit-to-branch
+        args: [--branch, main]
+
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: 83d9cd684c87d95d656c1458ef04895a7f1cbd8e # frozen: v8.30.1
+    hooks:
+      - id: gitleaks
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: 914e7df21a07ef503a81201c76d2b11c789d3fca # frozen: v1.7.12
+    hooks:
+      - id: actionlint
+
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: c92afdf2c6ca336aaa8f39e2bd8d48f62dbd8e1f # frozen: v1.31.1
+    hooks:
+      - id: zizmor
+        args: [--persona=pedantic, --offline]
+
+  - repo: local
+    hooks:
+      - id: no-rej-files
+        name: no leftover copier .rej files
+        entry: python3 tools/check_no_rej.py
+        language: system
+        pass_filenames: false
+        always_run: true
+      - id: claude-settings-json
+        name: .claude/settings.json is strict JSON
+        entry: python3 -c "import json,sys; [json.load(open(f)) for f in sys.argv[1:]]"
+        language: system
+        files: ^\.claude/settings\.json$
+      - id: check-fast
+        name: make check-fast (each layer's quick checks)
+        entry: make check-fast
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-push]

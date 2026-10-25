@@ -1,0 +1,117 @@
+# AGENTS.md
+
+The rulebook for every AI agent and person working on {{ project_name }}. Claude Code reads it through `CLAUDE.md`, which imports this file (`@AGENTS.md`); Codex and other agents read it directly. Edit **this** file only.
+
+This file comes from `house-template-base` and is updated with `copier update -a .copier-answers.base.yml`. Rules for one part of the code live next to it in `.claude/rules/` (loaded only when an agent touches matching files), and each stack layer adds its own there.
+
+## What this project is
+
+{% if description %}{{ description }}{% else %}TODO: one paragraph on what {{ project_name }} does and for whom.{% endif %}
+{% if domain %}
+Live: https://{{ domain }}
+{% endif %}
+Stack layers: {% for s in stacks %}`{{ s }}`{% if not loop.last %}, {% endif %}{% endfor %}. Decisions are in `docs/decisions/`; don't contradict one, propose a new record instead.
+
+## Rules for every agent
+
+1. **No unsourced claims.** Never invent facts, figures, dates or quotes, in code, copy, docs or PR descriptions. A number shown to users comes from code or data and carries its source; a claim in the README is measured, with its dataset and mode.
+2. **Public repository.** Never commit secrets, API keys, `.env` files, personal data, real customer data or private material. Use `.env.example` with placeholders. Infrastructure details (hosts, IPs, other services) stay out of the repo.
+3. **Ask before** adding a dependency, changing infrastructure or hosting, spending money (model calls, paid services), changing repository settings, or changing an accepted decision.
+4. **Never push to `main`.** Work on a branch named `type/short-description`; squash-merge through a pull request.
+5. **No agent attribution.** Commit messages and PR descriptions carry no `Co-Authored-By` or "generated with" lines for any coding agent (set in `.claude/settings.json`).
+6. **Plain language for the owner.** When explaining options or decisions, say what each means in practice and give a clear recommendation.
+7. **Enforced, not only written.** If a rule here matters, a check, a hook or a ruleset enforces it. When you add a rule, add its enforcement or say why it can't have one.
+
+## How work flows
+{% if agent_kit %}
+The agents come from the shared agent kit (plugin `agent-kit@{{ github_org }}`, turned on in `.claude/settings.json`); this file is the rulebook they follow.
+
+| Step | Who | Model |
+| --- | --- | --- |
+| 1. Plan the change: issue plan with acceptance criteria, each with the test that proves it | `agent-kit:planner` | Opus |
+| 2. Build each task in small vertical slices, in its own worktree | `agent-kit:implementer` | Sonnet |
+| 3. Run every check and map each criterion to a named test | `agent-kit:verifier` | Sonnet |
+| 4. Pre-push review in a fresh context | `agent-kit:reviewer` | Opus |
+| 4a. Instead of step 4, for owner-only changes and stage gates | `agent-kit:deep-reviewer` | Fable |
+| 5. Open the pull request; an independent reviewer (Codex) reviews the latest commit | Codex | n/a |
+| 6. Triage and resolve review comments | `agent-kit:review-handler` | Opus |
+| 7. Merge when every condition under "When merging" holds | Claude Code | n/a |
+{% else %}
+| Step | Who |
+| --- | --- |
+| 1. Plan the change: issue plan with acceptance criteria, each with the test that proves it | Planner |
+| 2. Build each task in small vertical slices | Implementer |
+| 3. Run every check and map each criterion to a named test | Verifier |
+| 4. Pre-push review in a fresh context | Reviewer |
+| 5. Open the pull request; an independent reviewer reviews the latest commit | Reviewer |
+| 6. Triage and resolve review comments | Review handler |
+| 7. Merge when every condition under "When merging" holds | Owner or Claude Code |
+{% endif %}
+## Planning
+
+- Every change gets a plan in its GitHub issue before building (the "Task" issue form); a small change gets a short plan.
+- The plan names what is created or reused, any data or API contract, the feature flag if there is one, and acceptance criteria, each with the test that proves it, including edge, error and empty states.
+- A hard-to-reverse choice gets a decision record in `docs/decisions/`; an easily reversible one gets a line in the register.
+
+## When building
+
+- One issue per branch. Start from its plan; if the plan is unclear or conflicts with a decision, stop and ask.
+- Small vertical slices: behaviour, tests and docs together. A bug fix comes with a regression test that fails without it.
+- **Noticed, not changed:** list anything outside the task in the PR description and open a `noticed` issue for each.
+- **Stop and ask** when a task needs an undecided product choice, a dependency not yet approved, or work well beyond the issue. **Stop after 3 failed attempts** at the same problem and report what was tried.
+- **Check the docs for the pinned version** before using a framework or tool API, not memory.
+- **Pre-flight check:** search the repository for every term, decision number and figure the change touches, and fix contradictions in the same PR.
+- Run `make check` before pushing. Stop what you start: dev servers, watchers, worktrees.
+- Commit messages and PR titles follow Conventional Commits (`feat:`, `fix:`, `docs:`, `chore:`, `test:`, `refactor:`, `ci:`, `perf:`); CI checks the PR title, which becomes the squash commit.
+
+## When reviewing
+
+Check in priority order:
+
+1. **Correctness:** bugs, wrong logic, unhandled states (loading, empty, error, permission denied, flag off).
+2. **Breaches of the rules** in this file and in `.claude/rules/`.
+3. **Security and privacy:** access control, injection, secrets, data exposure, supply chain.
+4. **Spec match:** the issue's acceptance criteria.
+5. **Tests:** important behaviour and edge states covered; no test that only restates the code.
+6. **Clarity:** could the owner understand and maintain this? Flag unnecessary complexity.
+
+How to report: most serious first; for each, the file and line, what's wrong, a concrete failure case and a suggested fix. Severity **P0/P1** (wrong behaviour, security or privacy problem, unsourced claim, broken rule) or **P2/P3** (consistency, wording, polish). Say "no issues found" when there are none. A first review is one complete pass including knock-on effects elsewhere; re-reviews check the fixes only (new P2/P3 only on changed lines, P0/P1 anywhere). Reviewers don't push commits or approve merges.
+
+## When merging
+
+A pull request may be squash-merged only when **all** of these hold:
+
+1. The independent reviewer has reviewed the latest commit (or, when it is unavailable for over 24 hours, a fallback review by the reviewer agent is posted as one PR comment headed "Fallback review").
+2. Every finding is fixed, answered with a reason, or deferred under "Review rounds"; every thread is resolved.
+3. Every check has passed (none failing, none running).
+4. The PR adds no security alerts.
+5. It isn't on the owner-only list.
+
+**The owner (@{{ owner_github }}) merges:** changes to `LICENSE`, repository settings or rulesets, CI permissions, `.claude/settings.json`, `.claude/hooks/`, these merge rules, infrastructure or running costs, and any PR where a finding is disputed as wrong.
+
+After merging, post a one-line summary: what merged, and any follow-up issues.
+
+## Review rounds and debt
+
+- P0/P1 always block, in any round.
+- P2/P3 are fixed in rounds 1 and 2; from round 3, open a `review-followup` issue, link it in the reply and resolve the thread.
+- Fix every open finding, push once, request one re-review.
+- More than 5 open `review-followup` issues pauses feature work.
+
+## Keeping agent cost down
+
+- Opus plans and reviews, Sonnet builds and verifies; Fable only for owner-only changes and stage gates.
+- Read only the files a task needs; keep PRs to one topic.
+- Run `make check` and the pre-push review before pushing, so external review rounds are rare.
+- Wait for reviews and checks in the background with long intervals; don't poll.
+- Before an expensive task (model calls, large media processing), say so and suggest a cheaper route if there is one.
+
+## Commands
+
+| Command | What it does |
+| --- | --- |
+| `make help` | Every target, including those the stack layers add |
+| `make install` | Install toolchains, dependencies and the git hooks |
+| `make check` | Everything CI runs: the base checks plus each layer's checks |
+| `make check-fast` | The quick subset the pre-push hook and the agent stop hook run |
+| `make template-status` | Show whether each template layer has a newer version |

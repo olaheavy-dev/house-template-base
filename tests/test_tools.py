@@ -1,0 +1,35 @@
+"""Helper scripts the rendered project runs from pre-commit and make."""
+
+from __future__ import annotations
+
+import subprocess
+import sys
+from pathlib import Path
+
+import yaml
+
+
+def test_rej_check_finds_ignored_leftovers_and_skips_dependency_folders(render):
+    project = render()
+    script = project / "tools" / "check_no_rej.py"
+    clean = subprocess.run([sys.executable, str(script)], cwd=project, capture_output=True, text=True)
+    assert clean.returncode == 0
+
+    (project / "node_modules" / "pkg").mkdir(parents=True)
+    (project / "node_modules" / "pkg" / "x.rej").write_text("vendored\n")
+    assert subprocess.run([sys.executable, str(script)], cwd=project).returncode == 0
+
+    (project / "Makefile.rej").write_text("@@ rejected hunk\n")
+    dirty = subprocess.run([sys.executable, str(script)], cwd=project, capture_output=True, text=True)
+    assert dirty.returncode == 1
+    assert "Makefile.rej" in dirty.stdout
+
+
+def test_rej_hook_always_runs_because_gitignore_hides_rej_files(render):
+    project = render()
+    hooks = {h["id"]: h for repo in yaml.safe_load((project / ".pre-commit-config.yaml").read_text())["repos"]
+             for h in repo["hooks"]}
+    rej = hooks["no-rej-files"]
+    assert rej["always_run"] is True and rej["pass_filenames"] is False
+    assert "*.rej" in (project / ".gitignore").read_text().splitlines()
+    assert (project / Path(rej["entry"].split()[-1])).is_file()

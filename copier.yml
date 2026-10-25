@@ -1,0 +1,88 @@
+# house-template-base: the layer every project starts from. It owns the coding-agent workflow,
+# CI and security workflows, repository governance and the decision record. Stack layers
+# (house-template-fastapi, house-template-nextjs, later house-template-dotnet) are applied after it,
+# each with its own answers file, and read these answers through _external_data.
+# Copier docs: https://copier.readthedocs.io/en/stable/configuring/
+
+_min_copier_version: "9.19.0"
+_subdirectory: template
+_answers_file: .copier-answers.base.yml
+_templates_suffix: .jinja
+_envops:
+  keep_trailing_newline: true
+  undefined: jinja2.StrictUndefined
+# The project owns these after the first copy; updates never overwrite them.
+_skip_if_exists:
+  - README.md
+  - docs/decisions/README.md
+_message_after_copy: |
+  {{ project_name }} is ready. Next:
+    1. git add -A && git commit -m "chore: start from house-template-base"
+    2. Apply the stack layers, each with its own answers file, for example:
+       copier copy --trust -a .copier-answers.fastapi.yml gh:{{ github_org }}/house-template-fastapi .
+    3. make install && make check
+
+project_name:
+  type: str
+  help: Project name, as people read it
+  validator: "{% if not project_name.strip() %}A name is required{% endif %}"
+
+project_slug:
+  type: str
+  help: Repository and package name
+  default: "{{ project_name.strip().lower().replace(' ', '-') }}"
+  validator: >-
+    {% if not (project_slug | regex_search('^[a-z][a-z0-9-]*$')) %}Lowercase letters, digits and hyphens only{% endif %}
+
+description:
+  type: str
+  help: One sentence on what the project does
+  default: ""
+
+github_org:
+  type: str
+  help: GitHub owner of the repository
+  default: olaheavy-dev
+
+owner_github:
+  type: str
+  help: GitHub username of the owner, for CODEOWNERS and the owner-only merge list
+  default: sunkanmi-olawuwo
+
+owner_name:
+  type: str
+  help: Copyright holder
+  default: Sunkanmi Olawuwo
+
+domain:
+  type: str
+  help: Public domain of the live app (empty if none yet)
+  default: ""
+
+stacks:
+  type: str
+  help: Stack layers this project will use (sets CI toolchains, CodeQL languages and Dependabot ecosystems)
+  multiselect: true
+  choices:
+    FastAPI backend (Python): fastapi
+    Next.js frontend (TypeScript): nextjs
+    .NET backend (C#): dotnet
+  default: [fastapi, nextjs]
+
+container_images:
+  type: bool
+  help: Publish container images to GHCR with provenance and an SBOM?
+  default: true
+
+agent_kit:
+  type: bool
+  help: Turn on the shared agent kit (planner, implementer, verifier, reviewers) from the agent-kit marketplace?
+  default: true
+
+license:
+  type: str
+  help: Licence for the repository
+  choices:
+    All rights reserved (public for portfolio purposes): all-rights-reserved
+    MIT: mit
+  default: all-rights-reserved
