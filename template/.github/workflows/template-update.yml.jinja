@@ -5,8 +5,8 @@
 # `--trust` runs the template's own tasks and migrations: only templates from {{ github_org }} are applied.
 #
 # Pull requests opened with GITHUB_TOKEN don't start other workflows, so CI won't run on them
-# automatically. Add a TEMPLATE_UPDATE_TOKEN secret (a GitHub App token or a fine-grained token with
-# contents and pull-requests write) to have CI run straight away.
+# automatically. Add a TEMPLATE_UPDATE_TOKEN secret to the `template-update` environment (a GitHub
+# App token or a fine-grained token with contents and pull-requests write) to have CI run straight away.
 name: Template update
 
 on:
@@ -24,6 +24,8 @@ jobs:
   update:
     name: Update template layers
     runs-on: ubuntu-24.04
+    # TEMPLATE_UPDATE_TOKEN, if set, lives in this environment's secrets (zizmor: secrets-outside-env).
+    environment: template-update
     timeout-minutes: 20
     permissions:
       contents: write # push the update branch
