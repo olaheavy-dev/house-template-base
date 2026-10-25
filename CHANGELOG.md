@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.1.1](https://github.com/olaheavy-dev/house-template-base/compare/v0.1.0...v0.1.1) (2026-10-25)
+
+
+### Bug Fixes
+
+* refuse config overrides, honour push.default and keep eval context in the push guard ([#10](https://github.com/olaheavy-dev/house-template-base/issues/10)) ([4888d75](https://github.com/olaheavy-dev/house-template-base/commit/4888d750769c61b7c31a1f93a3ac8d06ee5a8c40))
+
 ## 0.1.0 (2026-10-25)
 
 
