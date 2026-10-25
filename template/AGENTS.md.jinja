@@ -10,7 +10,7 @@ This file comes from `house-template-base` and is updated with `copier update -a
 {% if domain %}
 Live: https://{{ domain }}
 {% endif %}
-Stack layers: {% for s in stacks %}`{{ s }}`{% if not loop.last %}, {% endif %}{% endfor %}. Decisions are in `docs/decisions/`; don't contradict one, propose a new record instead.
+Stack layers: {% if stacks %}{% for s in stacks %}`{{ s }}`{% if not loop.last %}, {% endif %}{% endfor %}{% else %}none (base layer only){% endif %}. Decisions are in `docs/decisions/`; don't contradict one, propose a new record instead.
 
 ## Rules for every agent
 

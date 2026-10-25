@@ -149,3 +149,15 @@ def test_readme_badges_and_decision_records(render):
 def test_codeowners_names_the_owner_on_governed_paths(render):
     lines = (render(owner_github="someone") / ".github" / "CODEOWNERS").read_text().splitlines()
     assert "*            @someone" in lines and "/.claude/    @someone" in lines
+
+
+def test_a_project_with_no_stack_layers(render):
+    # Tooling repositories (such as the agent-kit plugin marketplace) use the base layer alone.
+    project = render(stacks=[], container_images=False)
+    assert "Stack layers: none (base layer only)." in (project / "AGENTS.md").read_text()
+    assert required_checks(project) <= pull_request_job_names(project)
+    assert not any(c.startswith("CodeQL (") and c != "CodeQL (actions)" for c in required_checks(project))
+    cfg = yaml.safe_load((project / ".github" / "dependabot.yml").read_text())
+    assert {u["package-ecosystem"] for u in cfg["updates"]} == {"github-actions", "pre-commit"}
+    record = (project / "docs" / "decisions" / "0002-start-from-house-template.md").read_text()
+    assert "starts from `house-template-base`, applied" in record
