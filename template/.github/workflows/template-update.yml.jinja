@@ -49,15 +49,16 @@ jobs:
         with:
           enable-cache: false
 
-      - name: Skip if an update is already open
+      - name: Look for an open update
         id: open
         run: |
-          prs=$(gh pr list --label template-update --state open --json number --jq length)
-          issues=$(gh issue list --label template-update --state open --json number --jq length)
-          echo "count=$((prs + issues))" >> "$GITHUB_OUTPUT"
+          echo "prs=$(gh pr list --label template-update --state open --json number --jq length)" >> "$GITHUB_OUTPUT"
+          echo "issues=$(gh issue list --label template-update --state open --json number --jq length)" >> "$GITHUB_OUTPUT"
 
+      # An open update PR always means wait. An open notification issue only stops another issue:
+      # once the token is added, the update PR is opened and the issue closed.
       - name: Apply new template versions
-        if: steps.open.outputs.count == '0'
+        if: steps.open.outputs.prs == '0' && (env.UPDATE_TOKEN != '' || steps.open.outputs.issues == '0')
         id: update
         run: |
           git config user.name "github-actions[bot]"
@@ -90,8 +91,11 @@ jobs:
             echo
             echo "Review the changes like any other PR. If the merge-conflict check fails, resolve the inline markers in this branch."
           } > body.md
-          GH_TOKEN="$UPDATE_TOKEN" gh pr create --head "$branch" --title "chore: update template layers" \
-            --label template-update --body-file body.md
+          url=$(GH_TOKEN="$UPDATE_TOKEN" gh pr create --head "$branch" --title "chore: update template layers" \
+            --label template-update --body-file body.md)
+          for issue in $(gh issue list --label template-update --state open --json number --jq '.[].number'); do
+            gh issue close "$issue" --comment "The update is now a pull request: ${url}"
+          done
 
       - name: Report the update without a token
         if: steps.update.outputs.updated != '' && env.UPDATE_TOKEN == ''

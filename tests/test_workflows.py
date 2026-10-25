@@ -138,3 +138,12 @@ def test_template_update_uses_a_token_for_prs_and_falls_back_to_an_issue(render)
     assert 'GH_TOKEN="$UPDATE_TOKEN" gh pr create' in steps["Open the pull request"]["run"]
     assert "env.UPDATE_TOKEN == ''" in steps["Report the update without a token"]["if"]
     assert "gh issue create" in steps["Report the update without a token"]["run"]
+
+
+def test_a_notification_issue_does_not_block_the_update_once_a_token_exists(render):
+    # Codex review on agent-kit #1: an open "update available" issue kept every later run skipping.
+    steps = {s["name"]: s for s in workflows(render())["template-update.yml"]["jobs"]["update"]["steps"]}
+    condition = steps["Apply new template versions"]["if"]
+    assert "steps.open.outputs.prs == '0'" in condition
+    assert "env.UPDATE_TOKEN != '' || steps.open.outputs.issues == '0'" in condition
+    assert "gh issue close" in steps["Open the pull request"]["run"]

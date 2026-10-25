@@ -158,6 +158,9 @@ def test_guard_files(tmp_path, path, expected):
     ("Read", "file_path", ".copier-answers.base.yml", "allow"),  # read yes, edit no
     ("Grep", "path", "backend/.env", "deny"),
     ("Grep", "path", "backend", "allow"),
+    ("Grep", "path", "secrets", "deny"),  # Codex review on agent-kit #1: the folder itself
+    ("Read", "file_path", "secrets", "deny"),
+    ("Read", "file_path", "secretsfile.md", "allow"),
     ("Read", "file_path", ".ENV", "deny"),  # case-insensitive filesystems
     ("Read", "file_path", ".Env.Prod", "deny"),
     ("Read", "file_path", "deploy/Server.PEM", "deny"),
