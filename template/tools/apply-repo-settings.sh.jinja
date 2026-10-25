@@ -32,8 +32,11 @@ api -X PUT "repos/${REPO}/automated-security-fixes" --silent
 api -X PUT "repos/${REPO}/private-vulnerability-reporting" --silent
 
 echo "- Actions: read-only default token, actions pinned to full commit SHAs"
+# can_approve_pull_request_reviews also governs whether GITHUB_TOKEN can *create* pull requests, which
+# the template-update workflow needs. Approvals grant nothing here: the ruleset requires none, and
+# every required check still has to pass.
 api -X PUT "repos/${REPO}/actions/permissions/workflow" --silent \
-  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false
+  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=true
 api -X PUT "repos/${REPO}/actions/permissions" --silent \
   -F enabled=true -f allowed_actions=all -F sha_pinning_required=true
 
@@ -42,7 +45,10 @@ api -X PUT "repos/${REPO}/immutable-releases" --silent
 
 for file in .github/rulesets/*.json; do
   name=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["name"])' "$file")
-  id=$(api "repos/${REPO}/rulesets" --jq ".[] | select(.name == \"${name}\") | .id")
+  # Only this repository's own rulesets: an inherited organisation ruleset with the same name can't be
+  # updated through the repository API.
+  id=$(api "repos/${REPO}/rulesets?includes_parents=false" \
+    --jq ".[] | select(.name == \"${name}\" and .source_type == \"Repository\") | .id")
   if [ -n "$id" ]; then
     echo "- ruleset ${name}: update (${id})"
     api -X PUT "repos/${REPO}/rulesets/${id}" --input "$file" --silent

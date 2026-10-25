@@ -75,6 +75,10 @@ def test_repo_settings_script_is_valid_bash_aimed_at_this_repository(render):
     assert 'REPO="${REPO:-acme/course-lens}"' in text
     assert "sha_pinning_required=true" in text and ".github/rulesets/*.json" in text
     assert "template-candidate" in text
+    # Codex review on PR 6: the template-update workflow opens PRs with GITHUB_TOKEN, and an
+    # inherited organisation ruleset of the same name can't be updated through the repository API.
+    assert "can_approve_pull_request_reviews=true" in text
+    assert "includes_parents=false" in text and '.source_type == \\"Repository\\"' in text
 
 
 def test_make_repo_settings_runs_the_script(render):
