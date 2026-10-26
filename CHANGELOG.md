@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/olaheavy-dev/house-template-base/compare/v0.2.0...v0.2.1) (2026-10-26)
+
+
+### Bug Fixes
+
+* show stack layers a publish-image call that passes zizmor and actionlint ([#20](https://github.com/olaheavy-dev/house-template-base/issues/20)) ([a7019ae](https://github.com/olaheavy-dev/house-template-base/commit/a7019ae34459ed7f76686c4b3e242e4cb12d1f5d))
+
 ## [0.2.0](https://github.com/olaheavy-dev/house-template-base/compare/v0.1.4...v0.2.0) (2026-10-25)
 
 
