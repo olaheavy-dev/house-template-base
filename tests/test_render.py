@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from pathlib import Path
 
 import pytest
@@ -141,3 +142,21 @@ def test_no_root_compose_without_a_layer_that_ships_one(render, stacks):
     project = render(stacks=stacks)
     assert not (project / "compose.yaml").exists()
     assert "compose.yaml" not in (project / ".github/template-owned/base.txt").read_text()
+
+
+def test_nextjs_projects_get_the_devtools_mcp_server_pinned_and_quiet(render):
+    project = render(stacks=["fastapi", "nextjs"])
+    servers = json.loads((project / ".mcp.json").read_text())["mcpServers"]
+    devtools = servers["next-devtools"]
+    assert devtools["command"] == "npx"
+    package = devtools["args"][-1]
+    assert re.fullmatch(r"next-devtools-mcp@\d+\.\d+\.\d+", package), "pin an exact version"
+    assert devtools["env"] == {"NEXT_TELEMETRY_DISABLED": "1"}
+    assert ".mcp.json" in (project / ".github/template-owned/base.txt").read_text()
+
+
+@pytest.mark.parametrize("stacks", [["fastapi"], ["dotnet"], []])
+def test_no_mcp_config_without_nextjs(render, stacks):
+    project = render(stacks=stacks)
+    assert not (project / ".mcp.json").exists()
+    assert ".mcp.json" not in (project / ".github/template-owned/base.txt").read_text()

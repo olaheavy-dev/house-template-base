@@ -11,7 +11,7 @@ Each layer is its own template repository with its own versions, applied with it
 
 | Layer | Gives a project |
 | --- | --- |
-| **base** (this repository) | `AGENTS.md` rulebook and Claude Code setup with guardrail hooks, CI and security workflows, rulesets and settings as code, Dependabot, policy files, decision records |
+| **base** (this repository) | `AGENTS.md` rulebook and Claude Code setup with guardrail hooks (plus a project `.mcp.json` with the Next.js DevTools server, pinned and with telemetry off, when the `nextjs` stack is chosen), CI and security workflows, rulesets and settings as code, Dependabot, policy files, decision records |
 | `house-template-fastapi` (planned) | FastAPI, PostgreSQL with pgvector, storage, LangChain, LangGraph and LangSmith |
 | `house-template-nextjs` (planned) | Next.js shell, design tokens, accessibility and screenshot checks |
 | `house-template-dotnet` (later) | ASP.NET Core, EF Core, mutation testing |
