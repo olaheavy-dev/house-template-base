@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.3.0](https://github.com/olaheavy-dev/house-template-base/compare/v0.2.2...v0.3.0) (2026-10-26)
+
+
+### Features
+
+* include the frontend's compose file for nextjs projects ([#24](https://github.com/olaheavy-dev/house-template-base/issues/24)) ([d7ccd53](https://github.com/olaheavy-dev/house-template-base/commit/d7ccd53aa6d4570e047adefcb6f7531b345ac410))
+
 ## [0.2.2](https://github.com/olaheavy-dev/house-template-base/compare/v0.2.1...v0.2.2) (2026-10-26)
 
 
