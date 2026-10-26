@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.2](https://github.com/olaheavy-dev/house-template-base/compare/v0.2.1...v0.2.2) (2026-10-26)
+
+
+### Bug Fixes
+
+* install pnpm without Corepack, and give nextjs projects the Next.js DevTools MCP server ([#22](https://github.com/olaheavy-dev/house-template-base/issues/22)) ([b1ae4fb](https://github.com/olaheavy-dev/house-template-base/commit/b1ae4fbc0e3521495df9dc844ccd5bde516c345a))
+
 ## [0.2.1](https://github.com/olaheavy-dev/house-template-base/compare/v0.2.0...v0.2.1) (2026-10-26)
 
 
