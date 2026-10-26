@@ -1,0 +1,18 @@
+# Owned by house-template-base. Each stack layer owns its own compose file next to its code
+# (backend/compose.yaml from house-template-fastapi, frontend/compose.yaml from
+# house-template-nextjs); this file only includes them, so `docker compose up` runs the whole
+# project from the root. Included files keep their own project directory, and a service in one can
+# depend on a service in another (the frontend's web on the backend's api).
+# Docs: https://docs.docker.com/reference/compose-file/include/ (needs Compose 2.20.3 or later)
+#
+# Compose has no optional include: a listed file that doesn't exist breaks every command. So this
+# lists only layers that ship a compose file, and a stack layer must be applied right after base.
+name: {{ project_slug }}
+
+include:
+{%- if 'fastapi' in stacks %}
+  - backend/compose.yaml
+{%- endif %}
+{%- if 'nextjs' in stacks %}
+  - frontend/compose.yaml
+{%- endif %}
