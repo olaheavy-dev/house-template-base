@@ -3,8 +3,11 @@
 # the digest is handed to a deploy. Building inside one reusable workflow is what lifts the
 # provenance to SLSA Build Level 3 (https://docs.github.com/en/actions/concepts/security/artifact-attestations).
 # Stack layers call it from their own publish workflow:
-#   uses: ./.github/workflows/publish-image.yml
+#   uses: ./.github/workflows/publish-image.yml # zizmor: ignore[self-repository]
 #   with: { image: api, context: backend }
+# zizmor (pedantic) prefers GitHub's self-repository form, `$/.github/workflows/...`, but actionlint
+# 1.7.12, the latest, rejects it in a reusable workflow call. Keep `./` with that one finding
+# ignored until actionlint accepts `$/`.
 name: Publish image
 
 on:
