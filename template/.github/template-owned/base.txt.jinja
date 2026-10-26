@@ -31,6 +31,9 @@ Makefile
 {%- if 'fastapi' in stacks %}
 compose.yaml
 {%- endif %}
+{%- if 'nextjs' in stacks %}
+.mcp.json
+{%- endif %}
 SECURITY.md
 docs/decisions/0001-record-decisions.md
 docs/decisions/0002-start-from-house-template.md

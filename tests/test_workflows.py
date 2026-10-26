@@ -147,3 +147,19 @@ def test_a_notification_issue_does_not_block_the_update_once_a_token_exists(rend
     assert "steps.open.outputs.prs == '0'" in condition
     assert "env.UPDATE_TOKEN != '' || steps.open.outputs.issues == '0'" in condition
     assert "gh issue close" in steps["Open the pull request"]["run"]
+
+
+def test_ci_installs_pnpm_without_corepack_for_nextjs(render):
+    # Corepack no longer ships with Node from 25 (the node:26 image has none), so `corepack
+    # enable` would fail on the current LTS.
+    ci = (render(stacks=["fastapi", "nextjs"]) / ".github/workflows/ci.yml").read_text()
+    assert "corepack" not in ci.lower().replace("corepack no longer ships", "")
+    steps = workflows(render(stacks=["fastapi", "nextjs"]))["ci.yml"]["jobs"]
+    [step] = [s for job in steps.values() for s in job["steps"] if s.get("name") == "Install pnpm"]
+    assert step["uses"].startswith("pnpm/action-setup@")
+    assert step["with"] == {"package_json_file": "frontend/package.json"}
+
+
+def test_no_pnpm_step_without_nextjs(render):
+    ci = (render(stacks=["fastapi"]) / ".github/workflows/ci.yml").read_text()
+    assert "pnpm" not in ci
