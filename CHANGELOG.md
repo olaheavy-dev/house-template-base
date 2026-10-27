@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.5.0](https://github.com/olaheavy-dev/house-template-base/compare/v0.4.0...v0.5.0) (2026-10-27)
+
+
+### Features
+
+* prepare for the dotnet stack with its compose include, the microsoft learn mcp server and sdk updates ([#28](https://github.com/olaheavy-dev/house-template-base/issues/28)) ([0007a55](https://github.com/olaheavy-dev/house-template-base/commit/0007a55b3ed8e149a34035ffbc9e47959d40e6dc))
+
+
+### Bug Fixes
+
+* leave nuget lock files as nuget writes them ([#30](https://github.com/olaheavy-dev/house-template-base/issues/30)) ([47a7728](https://github.com/olaheavy-dev/house-template-base/commit/47a7728f3e01e628d10a8cc163162cebd0d00a6e))
+
 ## [0.4.0](https://github.com/olaheavy-dev/house-template-base/compare/v0.3.0...v0.4.0) (2026-10-27)
 
 
