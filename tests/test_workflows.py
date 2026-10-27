@@ -81,6 +81,13 @@ def test_publish_image_is_optional_and_attests_provenance_and_sbom(render):
     assert "gh attestation verify" in steps[-1]["run"]
 
 
+def test_published_images_get_the_commit_they_were_built_from(render):
+    # The web image reports it on /health/live (house-template-nextjs).
+    steps = workflows(render())["publish-image.yml"]["jobs"]["publish"]["steps"]
+    build = next(s for s in steps if s.get("id") == "build")
+    assert build["with"]["build-args"].splitlines() == ["GIT_COMMIT=${{ github.sha }}"]
+
+
 def test_no_publish_workflow_without_container_images(render):
     project = render(container_images=False)
     assert "publish-image.yml" not in workflows(project)
