@@ -70,6 +70,9 @@ stacks:
     Next.js frontend (TypeScript): nextjs
     .NET backend (C#): dotnet
   default: [fastapi, nextjs]
+  # Both backend layers live in backend/ (code and compose.yaml), so a project has one of them.
+  validator: >-
+    {% if 'fastapi' in stacks and 'dotnet' in stacks %}Choose one backend: FastAPI or .NET{% endif %}
 
 container_images:
   type: bool

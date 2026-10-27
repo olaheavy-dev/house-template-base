@@ -1,0 +1,17 @@
+{
+  "mcpServers": {
+{%- if 'nextjs' in stacks %}
+    "next-devtools": {
+      "command": "npx",
+      "args": ["-y", "next-devtools-mcp@0.4.0"],
+      "env": { "NEXT_TELEMETRY_DISABLED": "1" }
+    }{% if 'dotnet' in stacks %},{% endif %}
+{%- endif %}
+{%- if 'dotnet' in stacks %}
+    "microsoft-learn": {
+      "type": "http",
+      "url": "https://learn.microsoft.com/api/mcp"
+    }
+{%- endif %}
+  }
+}

@@ -45,9 +45,14 @@ def test_every_required_check_is_a_job_that_runs_on_pull_requests(render, stacks
 
 
 def test_required_checks_include_each_stacks_codeql_language(render):
-    checks = required_checks(render(stacks=["fastapi", "dotnet"]))
-    assert {"make check", "actionlint", "zizmor", "CodeQL (actions)", "CodeQL (python)", "CodeQL (csharp)"} <= checks
-    assert "CodeQL (javascript-typescript)" not in checks
+    checks = required_checks(render(stacks=["dotnet", "nextjs"]))
+    assert {"make check", "actionlint", "zizmor", "CodeQL (actions)", "CodeQL (csharp)",
+            "CodeQL (javascript-typescript)"} <= checks
+    assert "CodeQL (python)" not in checks
+
+
+def test_fastapi_projects_require_python_codeql(render):
+    assert "CodeQL (python)" in required_checks(render(stacks=["fastapi"]))
 
 
 def test_required_workflows_run_on_every_pull_request(render):
@@ -98,7 +103,7 @@ def test_dependabot_covers_each_stack_and_always_the_workflows_and_hooks(render)
 
 def test_dependabot_for_a_dotnet_project_without_images(render):
     cfg = yaml.safe_load((render(stacks=["dotnet"], container_images=False) / ".github" / "dependabot.yml").read_text())
-    assert {u["package-ecosystem"] for u in cfg["updates"]} == {"github-actions", "pre-commit", "nuget"}
+    assert {u["package-ecosystem"] for u in cfg["updates"]} == {"github-actions", "pre-commit", "nuget", "dotnet-sdk"}
     assert all(u["cooldown"]["default-days"] == 7 for u in cfg["updates"])
 
 
