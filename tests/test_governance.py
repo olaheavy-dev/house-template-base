@@ -10,6 +10,8 @@ from pathlib import Path
 import pytest
 import yaml
 
+from conftest import ROOT
+
 
 def ruleset(project: Path) -> dict:
     return json.loads((project / ".github" / "rulesets" / "main.json").read_text())
@@ -166,3 +168,20 @@ def test_a_project_with_no_stack_layers(render):
     assert {u["package-ecosystem"] for u in cfg["updates"]} == {"github-actions", "pre-commit"}
     record = (project / "docs" / "decisions" / "0002-start-from-house-template.md").read_text()
     assert "starts from `house-template-base`, applied" in record
+
+
+def code_scanning_thresholds(ruleset: dict) -> set[tuple[str, str]]:
+    rules = {r["type"]: r for r in ruleset["rules"]}
+    return {(t["alerts_threshold"], t["security_alerts_threshold"])
+            for t in rules["code_scanning"]["parameters"]["code_scanning_tools"]}
+
+
+def test_generated_projects_block_a_code_scanning_alert_of_any_severity(render):
+    # Zero findings: an alert of any severity, from CodeQL or zizmor, blocks a merge.
+    ruleset = json.loads((render() / ".github/rulesets/main.json").read_text())
+    assert code_scanning_thresholds(ruleset) == {("all", "all")}
+
+
+def test_this_repository_blocks_a_code_scanning_alert_of_any_severity():
+    ruleset = json.loads((ROOT / ".github/rulesets/main.json").read_text())
+    assert code_scanning_thresholds(ruleset) == {("all", "all")}
