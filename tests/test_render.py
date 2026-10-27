@@ -124,32 +124,42 @@ def test_make_check_skips_the_commit_to_main_guard(render):
     assert "SKIP=no-commit-to-branch pre-commit run --all-files" in makefile
 
 
-# Layers that ship a compose file. Compose has no optional include, so listing a file no layer
-# creates (a dotnet one, today) breaks every `docker compose` command in the project.
-LAYER_COMPOSE_FILES = {"fastapi": "backend/compose.yaml", "nextjs": "frontend/compose.yaml"}
+# Layers that ship a compose file, in the order the root file includes them. Compose has no
+# optional include, so listing a file no layer creates breaks every `docker compose` command.
+LAYER_COMPOSE_FILES = {"fastapi": "backend/compose.yaml", "dotnet": "backend/compose.yaml",
+                       "nextjs": "frontend/compose.yaml"}
 
 
 @pytest.mark.parametrize(
-    "stacks",
-    [["fastapi", "nextjs"], ["fastapi"], ["fastapi", "dotnet"], ["nextjs"], ["nextjs", "dotnet"]],
+    "stacks", [["fastapi", "nextjs"], ["fastapi"], ["nextjs"], ["dotnet"], ["dotnet", "nextjs"]]
 )
 def test_root_compose_includes_only_files_a_layer_ships(render, stacks):
-    compose = yaml.safe_load((render(stacks=stacks) / "compose.yaml").read_text())
-    expected = [LAYER_COMPOSE_FILES[s] for s in stacks if s in LAYER_COMPOSE_FILES]
-    assert compose == {"name": "course-lens", "include": expected}
-
-
-@pytest.mark.parametrize("stacks", [[], ["dotnet"]])
-def test_no_root_compose_without_a_layer_that_ships_one(render, stacks):
     project = render(stacks=stacks)
+    compose = yaml.safe_load((project / "compose.yaml").read_text())
+    expected = [file for stack, file in LAYER_COMPOSE_FILES.items() if stack in stacks]
+    assert compose == {"name": "course-lens", "include": expected}
+    assert "compose.yaml" in (project / ".github/template-owned/base.txt").read_text()
+
+
+def test_no_root_compose_without_a_stack(render):
+    project = render(stacks=[])
     assert not (project / "compose.yaml").exists()
     assert "compose.yaml" not in (project / ".github/template-owned/base.txt").read_text()
 
 
+def test_a_project_has_one_backend(render):
+    # Both backend layers own backend/ and backend/compose.yaml.
+    with pytest.raises((ValueError, UserMessageError, CopierAnswersInterrupt)):
+        render(stacks=["fastapi", "dotnet"])
+
+
+def mcp_servers(project):
+    return json.loads((project / ".mcp.json").read_text())["mcpServers"]
+
+
 def test_nextjs_projects_get_the_devtools_mcp_server_pinned_and_quiet(render):
     project = render(stacks=["fastapi", "nextjs"])
-    servers = json.loads((project / ".mcp.json").read_text())["mcpServers"]
-    devtools = servers["next-devtools"]
+    devtools = mcp_servers(project)["next-devtools"]
     assert devtools["command"] == "npx"
     package = devtools["args"][-1]
     assert re.fullmatch(r"next-devtools-mcp@\d+\.\d+\.\d+", package), "pin an exact version"
@@ -157,8 +167,19 @@ def test_nextjs_projects_get_the_devtools_mcp_server_pinned_and_quiet(render):
     assert ".mcp.json" in (project / ".github/template-owned/base.txt").read_text()
 
 
-@pytest.mark.parametrize("stacks", [["fastapi"], ["dotnet"], []])
-def test_no_mcp_config_without_nextjs(render, stacks):
+@pytest.mark.parametrize("stacks", [["dotnet"], ["dotnet", "nextjs"]])
+def test_dotnet_projects_get_the_microsoft_learn_mcp_server(render, stacks):
+    # Official, current docs for .NET, Agent Framework and Azure, so agents don't guess APIs.
+    project = render(stacks=stacks)
+    servers = mcp_servers(project)
+    assert servers["microsoft-learn"] == {"type": "http", "url": "https://learn.microsoft.com/api/mcp"}
+    assert ("next-devtools" in servers) == ("nextjs" in stacks)
+    assert ".mcp.json" in (project / ".github/template-owned/base.txt").read_text()
+
+
+@pytest.mark.parametrize("stacks", [["fastapi"], []])
+def test_no_mcp_config_without_nextjs_or_dotnet(render, stacks):
     project = render(stacks=stacks)
     assert not (project / ".mcp.json").exists()
     assert ".mcp.json" not in (project / ".github/template-owned/base.txt").read_text()
+
