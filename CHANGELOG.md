@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.4.0](https://github.com/olaheavy-dev/house-template-base/compare/v0.3.0...v0.4.0) (2026-10-27)
+
+
+### Features
+
+* pass the commit to image builds as GIT_COMMIT ([#26](https://github.com/olaheavy-dev/house-template-base/issues/26)) ([d4c60b2](https://github.com/olaheavy-dev/house-template-base/commit/d4c60b2ffa6a62b7dc7ef3f43cb14c500bed367b))
+
 ## [0.3.0](https://github.com/olaheavy-dev/house-template-base/compare/v0.2.2...v0.3.0) (2026-10-26)
 
 
