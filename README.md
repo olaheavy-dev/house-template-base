@@ -39,7 +39,7 @@ make repo-settings   # once the GitHub repository exists: rulesets, security and
 - **Supply chain:**
   - every action is pinned to a commit SHA, and GitHub's pinning policy is on;
   - dependency review checks licences;
-  - a reusable image publisher attaches SLSA provenance and an SBOM, verified before deploy;
+  - a reusable image publisher attaches SLSA provenance and an SBOM, verified before deploy, and passes the commit to the build as `GIT_COMMIT`;
   - OpenSSF Scorecard runs.
 - **Improvements flow both ways:**
   - a PR that edits a template-owned file gets a CI warning;
