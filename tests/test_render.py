@@ -27,7 +27,8 @@ def test_claude_md_imports_agents_md_rather_than_being_a_symlink(render):
 def test_agents_md_carries_the_project_and_the_owner(render):
     text = (render() / "AGENTS.md").read_text()
     assert "Turns a course into something" in text
-    assert "https://courselens.example.dev" in text
+    # The whole line, not a substring: CodeQL rightly reads `"https://…" in text` as URL sanitisation.
+    assert text.splitlines().count("Live: https://courselens.example.dev") == 1
     assert "@sunkanmi-olawuwo" in text
     assert "TODO" not in text
 
