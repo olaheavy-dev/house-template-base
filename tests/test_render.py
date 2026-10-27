@@ -118,6 +118,19 @@ def test_file_guard_also_covers_reads(render):
     assert "Edit|Write|NotebookEdit|Read|Grep" in matchers
 
 
+@pytest.mark.parametrize("hook", ["end-of-file-fixer", "trailing-whitespace"])
+def test_whitespace_hooks_leave_nuget_lock_files_as_nuget_writes_them(render, hook):
+    # NuGet writes packages.lock.json with no final newline on every restore; a hook that adds one
+    # makes every restore and Dependabot update look like a change, and fails make check.
+    config = yaml.safe_load((render() / ".pre-commit-config.yaml").read_text())
+    [entry] = [h for repo in config["repos"] for h in repo["hooks"] if h["id"] == hook]
+    exclude = re.compile(entry["exclude"])
+    assert exclude.search("packages.lock.json")
+    assert exclude.search("backend/src/Api/Api/packages.lock.json")
+    assert not exclude.search("backend/Backend.slnx")
+    assert not exclude.search("frontend/pnpm-lock.yaml")
+
+
 def test_make_check_skips_the_commit_to_main_guard(render):
     # Fallback review on PR 1: no-commit-to-branch fails on main, so make check failed in CI on main.
     makefile = (render() / "Makefile").read_text()

@@ -17,9 +17,13 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=1024]
       - id: detect-private-key
+      # NuGet writes packages.lock.json without a final newline and rewrites it on every restore;
+      # "fixing" it would make every restore and lock-file update look like a change.
       - id: end-of-file-fixer
+        exclude: (^|/)packages\.lock\.json$
       - id: trailing-whitespace
         args: [--markdown-linebreak-ext=md]
+        exclude: (^|/)packages\.lock\.json$
       - id: no-commit-to-branch
         args: [--branch, main]
 
