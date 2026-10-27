@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.0](https://github.com/olaheavy-dev/house-template-base/compare/v0.5.0...v0.6.0) (2026-10-27)
+
+
+### Features
+
+* block a code-scanning alert of any severity in generated projects and here ([#32](https://github.com/olaheavy-dev/house-template-base/issues/32)) ([c75e1c4](https://github.com/olaheavy-dev/house-template-base/commit/c75e1c4789cdc53322595a39699bf3a0fb6bdff6))
+
 ## [0.5.0](https://github.com/olaheavy-dev/house-template-base/compare/v0.4.0...v0.5.0) (2026-10-27)
 
 
