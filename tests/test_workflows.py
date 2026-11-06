@@ -170,3 +170,97 @@ def test_ci_installs_pnpm_without_corepack_for_nextjs(render):
 def test_no_pnpm_step_without_nextjs(render):
     ci = (render(stacks=["fastapi"]) / ".github/workflows/ci.yml").read_text()
     assert "pnpm" not in ci
+
+
+def update_steps(project: Path) -> dict[str, dict]:
+    return {s["name"]: s for s in workflows(project)["template-update.yml"]["jobs"]["update"]["steps"]}
+
+
+def test_template_update_names_failed_layers_and_points_to_the_manual_route(render):
+    # A failing layer must not stop the others (issue 34): the PR and the issue say which layers failed
+    # and name `copier recopy`, which is manual only because it discards local edits.
+    steps = update_steps(render())
+    assert "failed=" in steps["Apply new template versions"]["run"]
+    for name in ("Open the pull request", "Report the update without a token"):
+        assert "FAILED" in steps[name]["env"], name
+        assert "copier recopy" in steps[name]["run"], name
+    assert "never run automatically" in steps["Open the pull request"]["run"]
+
+
+def test_template_update_ends_red_after_a_layer_failed(render):
+    final = list(update_steps(render()).values())[-1]
+    assert final["if"] == "steps.update.outputs.failed != ''"
+    assert "exit 1" in final["run"]
+    assert "GITHUB_STEP_SUMMARY" in final["run"]
+
+
+def make_fake_uvx(bin_dir: Path) -> None:
+    """A stand-in for `uvx copier==X ...`: every layer has an update; layers named in $FAIL leave a half-done change."""
+    bin_dir.mkdir()
+    fake = bin_dir / "uvx"
+    fake.write_text("""#!/usr/bin/env bash
+answers="${@: -1}"
+layer="${answers#.copier-answers.}"
+layer="${layer%.yml}"
+case "$2" in
+  check-update) exit 2 ;;
+  update)
+    echo "update from $layer" > "changed-by-$layer.txt"
+    if [[ " $FAIL " == *" $layer "* ]]; then
+      echo partial >> README.md
+      echo partial > partial-untracked.txt
+      exit 1
+    fi ;;
+esac
+""")
+    fake.chmod(0o755)
+
+
+def run_update_step(render, tmp_path: Path, layers: list[str], failing: set[str]):
+    """Run the rendered 'Apply new template versions' script in a throwaway repository."""
+    make_fake_uvx(tmp_path / "bin")
+    script = update_steps(render())["Apply new template versions"]["run"]
+    repo = tmp_path / "scratch"
+    repo.mkdir()
+    for layer in layers:
+        (repo / f".copier-answers.{layer}.yml").write_text(f"_src_path: {layer}\n")
+    (repo / "README.md").write_text("start\n")
+    env = {"PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "HOME": str(tmp_path),
+           "COPIER_VERSION": "9.19.1", "GITHUB_OUTPUT": str(tmp_path / "out.txt"),
+           "FAIL": " ".join(sorted(failing))}
+    subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
+    subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
+    subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "start"], cwd=repo, check=True)
+    result = subprocess.run(["bash", "-e", "-c", script], cwd=repo, env=env, capture_output=True, text=True)
+    outputs = dict(ln.split("=", 1) for ln in (tmp_path / "out.txt").read_text().splitlines())
+    log = subprocess.run(["git", "log", "--format=%s"], cwd=repo, capture_output=True, text=True).stdout.splitlines()
+    status = subprocess.run(["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True).stdout
+    return result, outputs, log, status, repo
+
+
+def test_update_script_keeps_the_earlier_layer_when_a_later_one_fails(render, tmp_path):
+    result, outputs, log, status, repo = run_update_step(render, tmp_path, ["base", "fastapi"], {"fastapi"})
+    assert result.returncode == 0, result.stderr  # the job turns red in a later step, after the PR opens
+    assert outputs["updated"].split() == [".copier-answers.base.yml"]
+    assert outputs["failed"].split() == [".copier-answers.fastapi.yml"]
+    assert log[0] == "chore: update base.yml template layer"  # sic: the existing subject keeps the .yml  # the committed base update survives
+    assert (repo / "changed-by-base.txt").exists()  # committed by the base layer
+    assert status == "", status  # the failed layer's half-done changes are gone
+    assert (repo / "README.md").read_text() == "start\n"
+    assert not (repo / "partial-untracked.txt").exists()
+
+
+def test_update_script_when_every_layer_fails_reports_no_update(render, tmp_path):
+    result, outputs, log, status, _ = run_update_step(render, tmp_path, ["base", "fastapi"], {"base", "fastapi"})
+    assert result.returncode == 0, result.stderr
+    assert outputs["updated"] == ""
+    assert sorted(outputs["failed"].split()) == [".copier-answers.base.yml", ".copier-answers.fastapi.yml"]
+    assert log == ["start"] and status == ""
+
+
+def test_update_script_with_one_answers_file_and_no_failure(render, tmp_path):
+    result, outputs, log, _, _ = run_update_step(render, tmp_path, ["base"], set())
+    assert result.returncode == 0, result.stderr
+    assert outputs["updated"].split() == [".copier-answers.base.yml"]
+    assert outputs["failed"] == ""
+    assert log[0] == "chore: update base.yml template layer"  # sic: the existing subject keeps the .yml

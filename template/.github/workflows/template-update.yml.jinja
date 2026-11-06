@@ -9,6 +9,11 @@
 # A token is used rather than letting GITHUB_TOKEN create pull requests: that setting stays off, and
 # CI runs on PRs opened with a token but not on PRs opened with GITHUB_TOKEN. Without the token the
 # workflow opens an issue saying which layers have updates, using GITHUB_TOKEN with issues: write.
+#
+# One layer failing does not stop the others: its half-done changes are discarded (each layer that
+# updated is already committed, so those stay), the pull request or issue is still opened for the
+# layers that did update and names the failed ones, and the last step then fails the job so the run
+# is red in the Actions list. A failed layer is updated by hand (see the pull request text).
 name: Template update
 
 on:
@@ -64,23 +69,32 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           updated=""
+          failed=""
           for answers in .copier-answers.*.yml; do
             status=0
             uvx "copier==${COPIER_VERSION}" check-update --quiet --answers-file "$answers" || status=$?
             if [ "$status" -eq 2 ]; then
-              uvx "copier==${COPIER_VERSION}" update --trust --defaults --conflict inline --answers-file "$answers"
-              git add -A && git commit -q -m "chore: update ${answers#.copier-answers.} template layer" --allow-empty
-              updated="${updated} ${answers}"
+              if uvx "copier==${COPIER_VERSION}" update --trust --defaults --conflict inline --answers-file "$answers"; then
+                git add -A && git commit -q -m "chore: update ${answers#.copier-answers.} template layer" --allow-empty
+                updated="${updated} ${answers}"
+              else
+                # Earlier layers are already committed, so this only drops this layer's partial changes.
+                echo "::warning::copier update failed for ${answers}; its changes were discarded and the other layers continue"
+                git reset -q --hard && git clean -fdq
+                failed="${failed} ${answers}"
+              fi
             elif [ "$status" -ne 0 ]; then
               echo "::warning::copier check-update failed for ${answers} (exit ${status})"
             fi
           done
           echo "updated=${updated}" >> "$GITHUB_OUTPUT"
+          echo "failed=${failed}" >> "$GITHUB_OUTPUT"
 
       - name: Open the pull request
         if: steps.update.outputs.updated != '' && env.UPDATE_TOKEN != ''
         env:
           UPDATED: {{ '${{ steps.update.outputs.updated }}' }}
+          FAILED: {{ '${{ steps.update.outputs.failed }}' }}
           REPOSITORY: {{ '${{ github.repository }}' }}
         run: |
           branch="chore/template-update-$(date -u +%Y%m%d)"
@@ -90,6 +104,10 @@ jobs:
             echo "New template versions for:${UPDATED}."
             echo
             echo "Review the changes like any other PR. If the merge-conflict check fails, resolve the inline markers in this branch."
+            if [ -n "$FAILED" ]; then
+              echo
+              echo "**Could not update:**${FAILED}. See the failed run for the error. Update each by hand: run \`copier update --trust -a <answers file>\` locally and fix what fails. If that cannot work, \`copier recopy --trust -a <answers file>\` applies the latest version but discards local edits to template-owned files, so check its diff first. It is never run automatically."
+            fi
           } > body.md
           url=$(GH_TOKEN="$UPDATE_TOKEN" gh pr create --head "$branch" --title "chore: update template layers" \
             --label template-update --body-file body.md)
@@ -101,10 +119,31 @@ jobs:
         if: steps.update.outputs.updated != '' && env.UPDATE_TOKEN == ''
         env:
           UPDATED: {{ '${{ steps.update.outputs.updated }}' }}
+          FAILED: {{ '${{ steps.update.outputs.failed }}' }}
         run: |
           {
             echo "New template versions are available for:${UPDATED}."
             echo
             echo "Add a TEMPLATE_UPDATE_TOKEN secret to the \`template-update\` environment so this workflow can open the update as a pull request, or run \`copier update --trust -a <answers file>\` locally."
+            if [ -n "$FAILED" ]; then
+              echo
+              echo "**Could not update automatically:**${FAILED}. Run \`copier update --trust -a <answers file>\` locally and fix what fails. If that cannot work, \`copier recopy --trust -a <answers file>\` applies the latest version but discards local edits to template-owned files, so check its diff first. It is never run automatically."
+            fi
           } > body.md
           gh issue create --title "Template update available" --label template-update --body-file body.md
+
+      # Runs after the pull request or issue is opened, so the layers that updated are not lost.
+      - name: Fail the run when a layer could not be updated
+        if: steps.update.outputs.failed != ''
+        env:
+          FAILED: {{ '${{ steps.update.outputs.failed }}' }}
+        run: |
+          echo "::error::These template layers could not be updated:${FAILED}"
+          {
+            echo "### Template layers that could not be updated"
+            echo
+            echo "${FAILED}"
+            echo
+            echo "Update each by hand with \`copier update --trust -a <answers file>\`. \`copier recopy\` discards local edits to template-owned files and is never run automatically."
+          } >> "$GITHUB_STEP_SUMMARY"
+          exit 1
