@@ -184,12 +184,16 @@ def test_template_update_names_failed_layers_and_points_to_the_manual_route(rend
     for name in ("Open the pull request", "Report the update without a token"):
         assert "FAILED" in steps[name]["env"], name
         assert "copier recopy" in steps[name]["run"], name
+        assert "overwrites your edits to any file it renders" in steps[name]["run"], name
+        assert "git diff" in steps[name]["run"], name
     assert "never run automatically" in steps["Open the pull request"]["run"]
 
 
 def test_template_update_ends_red_after_a_layer_failed(render):
     final = list(update_steps(render()).values())[-1]
-    assert final["if"] == "steps.update.outputs.failed != ''"
+    # !cancelled() so the summary is also written when the PR or issue step fails
+    # (https://docs.github.com/en/actions/reference/workflows-and-actions/expressions, status check functions).
+    assert final["if"] == "${{ !cancelled() && steps.update.outputs.failed != '' }}"
     assert "exit 1" in final["run"]
     assert "GITHUB_STEP_SUMMARY" in final["run"]
 
@@ -205,8 +209,14 @@ layer="${layer%.yml}"
 case "$2" in
   check-update) exit 2 ;;
   update)
+    # Copier refuses to update a dirty working tree. This is from memory of Copier's code (the docs
+    # only advise starting from a clean `git status`), so it is an assumption, not a documented rule.
+    if [ -n "$(git status --porcelain)" ]; then echo "dirty tree" >&2; exit 1; fi
     echo "update from $layer" > "changed-by-$layer.txt"
     if [[ " $FAIL " == *" $layer "* ]]; then
+      if [[ " $COMMIT_PARTWAY " == *" $layer "* ]]; then  # e.g. a template task that commits
+        git add -A && git -c user.name=t -c user.email=t@t commit -qm "partway $layer"
+      fi
       echo partial >> README.md
       echo partial > partial-untracked.txt
       exit 1
@@ -216,7 +226,7 @@ esac
     fake.chmod(0o755)
 
 
-def run_update_step(render, tmp_path: Path, layers: list[str], failing: set[str]):
+def run_update_step(render, tmp_path: Path, layers: list[str], failing: set[str], partway: set[str] = frozenset()):
     """Run the rendered 'Apply new template versions' script in a throwaway repository."""
     make_fake_uvx(tmp_path / "bin")
     script = update_steps(render())["Apply new template versions"]["run"]
@@ -227,7 +237,7 @@ def run_update_step(render, tmp_path: Path, layers: list[str], failing: set[str]
     (repo / "README.md").write_text("start\n")
     env = {"PATH": f"{tmp_path / 'bin'}:/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin", "HOME": str(tmp_path),
            "COPIER_VERSION": "9.19.1", "GITHUB_OUTPUT": str(tmp_path / "out.txt"),
-           "FAIL": " ".join(sorted(failing))}
+           "FAIL": " ".join(sorted(failing)), "COMMIT_PARTWAY": " ".join(sorted(partway))}
     subprocess.run(["git", "init", "-q", "-b", "main"], cwd=repo, check=True)
     subprocess.run(["git", "add", "-A"], cwd=repo, check=True)
     subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", "commit", "-qm", "start"], cwd=repo, check=True)
@@ -243,7 +253,9 @@ def test_update_script_keeps_the_earlier_layer_when_a_later_one_fails(render, tm
     assert result.returncode == 0, result.stderr  # the job turns red in a later step, after the PR opens
     assert outputs["updated"].split() == [".copier-answers.base.yml"]
     assert outputs["failed"].split() == [".copier-answers.fastapi.yml"]
-    assert log[0] == "chore: update base.yml template layer"  # sic: the existing subject keeps the .yml  # the committed base update survives
+    # The subject keeps ".yml" because the workflow's existing subject does (tracked separately).
+    # The subject keeps ".yml" because the workflow's existing subject does (tracked separately).
+    assert log[0] == "chore: update base.yml template layer"  # the committed base update survives
     assert (repo / "changed-by-base.txt").exists()  # committed by the base layer
     assert status == "", status  # the failed layer's half-done changes are gone
     assert (repo / "README.md").read_text() == "start\n"
@@ -263,4 +275,26 @@ def test_update_script_with_one_answers_file_and_no_failure(render, tmp_path):
     assert result.returncode == 0, result.stderr
     assert outputs["updated"].split() == [".copier-answers.base.yml"]
     assert outputs["failed"] == ""
-    assert log[0] == "chore: update base.yml template layer"  # sic: the existing subject keeps the .yml
+    assert log[0] == "chore: update base.yml template layer"
+
+
+def test_update_script_rolls_back_a_layer_that_committed_partway(render, tmp_path):
+    result, outputs, log, status, repo = run_update_step(render, tmp_path, ["base", "fastapi"], {"fastapi"},
+                                                         partway={"fastapi"})
+    assert result.returncode == 0, result.stderr
+    assert "partway fastapi" not in log
+    assert log[0] == "chore: update base.yml template layer"
+    assert not (repo / "changed-by-fastapi.txt").exists()
+    assert status == ""
+
+
+def test_update_script_continues_to_a_later_layer_after_the_first_fails(render, tmp_path):
+    result, outputs, log, status, repo = run_update_step(render, tmp_path, ["base", "fastapi"], {"base"})
+    assert result.returncode == 0, result.stderr
+    assert outputs["updated"].split() == [".copier-answers.fastapi.yml"]
+    assert outputs["failed"].split() == [".copier-answers.base.yml"]
+    assert status == ""  # a leftover from base would make the fake (like Copier) refuse fastapi
+    committed = subprocess.run(["git", "show", "--name-only", "--format=", "HEAD"], cwd=repo,
+                               capture_output=True, text=True).stdout.split()
+    assert committed == ["changed-by-fastapi.txt"]  # nothing from the failed base layer
+    assert not (repo / "partial-untracked.txt").exists()

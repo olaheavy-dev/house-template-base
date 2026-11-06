@@ -13,7 +13,7 @@
 # One layer failing does not stop the others: its half-done changes are discarded (each layer that
 # updated is already committed, so those stay), the pull request or issue is still opened for the
 # layers that did update and names the failed ones, and the last step then fails the job so the run
-# is red in the Actions list. A failed layer is updated by hand (see the pull request text).
+# is red in the Actions list. A failed layer is updated by hand (see the pull request, the issue or the run summary).
 name: Template update
 
 on:
@@ -74,13 +74,16 @@ jobs:
             status=0
             uvx "copier==${COPIER_VERSION}" check-update --quiet --answers-file "$answers" || status=$?
             if [ "$status" -eq 2 ]; then
+              head=$(git rev-parse HEAD)
               if uvx "copier==${COPIER_VERSION}" update --trust --defaults --conflict inline --answers-file "$answers"; then
                 git add -A && git commit -q -m "chore: update ${answers#.copier-answers.} template layer" --allow-empty
                 updated="${updated} ${answers}"
               else
-                # Earlier layers are already committed, so this only drops this layer's partial changes.
+                # Back to where this layer started: earlier layers stay committed, and a layer that
+                # committed partway (a template task) is rolled back too.
                 echo "::warning::copier update failed for ${answers}; its changes were discarded and the other layers continue"
-                git reset -q --hard && git clean -fdq
+                git reset -q --hard "$head"
+                git clean -fdq
                 failed="${failed} ${answers}"
               fi
             elif [ "$status" -ne 0 ]; then
@@ -106,7 +109,7 @@ jobs:
             echo "Review the changes like any other PR. If the merge-conflict check fails, resolve the inline markers in this branch."
             if [ -n "$FAILED" ]; then
               echo
-              echo "**Could not update:**${FAILED}. See the failed run for the error. Update each by hand: run \`copier update --trust -a <answers file>\` locally and fix what fails. If that cannot work, \`copier recopy --trust -a <answers file>\` applies the latest version but discards local edits to template-owned files, so check its diff first. It is never run automatically."
+              echo "**Could not update:**${FAILED}. See the failed run for the error. Update each by hand: run \`copier update --trust -a <answers file>\` locally and fix what fails. If that cannot work, \`copier recopy --trust -a <answers file>\` re-applies the layer as if it were new and overwrites your edits to any file it renders, so review \`git diff\` before committing. It is never run automatically."
             fi
           } > body.md
           url=$(GH_TOKEN="$UPDATE_TOKEN" gh pr create --head "$branch" --title "chore: update template layers" \
@@ -127,14 +130,14 @@ jobs:
             echo "Add a TEMPLATE_UPDATE_TOKEN secret to the \`template-update\` environment so this workflow can open the update as a pull request, or run \`copier update --trust -a <answers file>\` locally."
             if [ -n "$FAILED" ]; then
               echo
-              echo "**Could not update automatically:**${FAILED}. Run \`copier update --trust -a <answers file>\` locally and fix what fails. If that cannot work, \`copier recopy --trust -a <answers file>\` applies the latest version but discards local edits to template-owned files, so check its diff first. It is never run automatically."
+              echo "**Could not update automatically:**${FAILED}. Run \`copier update --trust -a <answers file>\` locally and fix what fails. If that cannot work, \`copier recopy --trust -a <answers file>\` re-applies the layer as if it were new and overwrites your edits to any file it renders, so review \`git diff\` before committing. It is never run automatically."
             fi
           } > body.md
           gh issue create --title "Template update available" --label template-update --body-file body.md
 
       # Runs after the pull request or issue is opened, so the layers that updated are not lost.
       - name: Fail the run when a layer could not be updated
-        if: steps.update.outputs.failed != ''
+        if: {{ '${{ !cancelled() && steps.update.outputs.failed != \'\' }}' }}
         env:
           FAILED: {{ '${{ steps.update.outputs.failed }}' }}
         run: |
@@ -144,6 +147,6 @@ jobs:
             echo
             echo "${FAILED}"
             echo
-            echo "Update each by hand with \`copier update --trust -a <answers file>\`. \`copier recopy\` discards local edits to template-owned files and is never run automatically."
+            echo "Update each by hand with \`copier update --trust -a <answers file>\`. \`copier recopy\` re-applies the layer as if it were new and overwrites your edits to any file it renders, so review \`git diff\` before committing. It is never run automatically."
           } >> "$GITHUB_STEP_SUMMARY"
           exit 1
