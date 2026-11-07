@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.6.1](https://github.com/olaheavy-dev/house-template-base/compare/v0.6.0...v0.6.1) (2026-11-06)
+
+
+### Bug Fixes
+
+* template-update keeps going when one layer's update fails ([#37](https://github.com/olaheavy-dev/house-template-base/issues/37)) ([2719694](https://github.com/olaheavy-dev/house-template-base/commit/2719694841ead3771864cf561227de3157b416fe))
+
 ## [0.6.0](https://github.com/olaheavy-dev/house-template-base/compare/v0.5.0...v0.6.0) (2026-10-27)
 
 
