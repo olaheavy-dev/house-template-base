@@ -1,7 +1,8 @@
-# house-template-base: the layer every project starts from. It owns the coding-agent workflow,
-# CI and security workflows, repository governance and the decision record. Stack layers
-# (house-template-fastapi, house-template-nextjs, later house-template-dotnet) are applied after it,
-# each with its own answers file, and read these answers through _external_data.
+# house-template-base: the layer every project starts from. It owns the coding-agent guardrails
+# (the process itself comes from agent-workflows), CI and security workflows, repository
+# governance and the decision record. Stack layers (house-template-fastapi, house-template-nextjs,
+# later house-template-dotnet) are applied after it, each with its own answers file, and read these
+# answers through _external_data.
 # Copier docs: https://copier.readthedocs.io/en/stable/configuring/
 
 _min_copier_version: "9.19.0"
@@ -16,6 +17,7 @@ _skip_if_exists:
   - README.md
   - LICENSE
   - docs/decisions/README.md
+  - docs/planning/status.md
 _message_after_copy: |
   {{ project_name }} is ready. Next:
     1. git add -A && git commit -m "chore: start from house-template-base"

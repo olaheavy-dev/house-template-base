@@ -197,3 +197,25 @@ def test_no_mcp_config_without_nextjs_or_dotnet(render, stacks):
     assert not (project / ".mcp.json").exists()
     assert ".mcp.json" not in (project / ".github/template-owned/base.txt").read_text()
 
+
+
+def test_agents_md_points_to_agent_workflows_and_carries_the_code_review_rules(render):
+    # The process lives in agent-workflows; hosted @codex review reads "## Code Review Rules".
+    text = (render() / "AGENTS.md").read_text()
+    assert "(https://github.com/olaheavy-dev/agent-workflows)" in text
+    headings = [line for line in text.splitlines() if line.startswith("## ")]
+    assert headings.count("## Code Review Rules") == 1
+    assert "## When reviewing" not in headings and "## Planning" not in headings
+    assert "docs/planning/status.md" in text and "docs/superpowers/plans/" in text
+
+
+def test_status_file_is_rendered_and_left_to_the_project_on_update(render):
+    project = render()
+    assert (project / "docs/planning/status.md").read_text().startswith("# Status\n")
+    copier_yml = yaml.safe_load((Path(__file__).resolve().parents[1] / "copier.yml").read_text())
+    assert "docs/planning/status.md" in copier_yml["_skip_if_exists"]
+    assert "docs/planning/status.md" not in (project / ".github/template-owned/base.txt").read_text()
+
+
+def test_gitignore_keeps_superpowers_ledgers_out(render):
+    assert ".superpowers/" in (render() / ".gitignore").read_text().splitlines()

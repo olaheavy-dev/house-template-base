@@ -3,7 +3,7 @@
 [![Test](https://github.com/olaheavy-dev/house-template-base/actions/workflows/test.yml/badge.svg)](https://github.com/olaheavy-dev/house-template-base/actions/workflows/test.yml)
 [![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/olaheavy-dev/house-template-base/badge)](https://scorecard.dev/viewer/?uri=github.com/olaheavy-dev/house-template-base)
 
-The base layer of my project templates: the coding-agent workflow, CI and supply-chain security, repository governance and decision records that every new project starts from. It's a [Copier](https://copier.readthedocs.io/) template, not a package: it copies files into a project once, the project owns them from then on, and `copier update` brings later improvements in as a reviewable merge.
+The base layer of my project templates: the coding-agent guardrails, CI and supply-chain security, repository governance and decision records that every new project starts from. It's a [Copier](https://copier.readthedocs.io/) template, not a package: it copies files into a project once, the project owns them from then on, and `copier update` brings later improvements in as a reviewable merge.
 
 ## Layers
 
@@ -31,6 +31,7 @@ make repo-settings   # once the GitHub repository exists: rulesets, security and
 
 ## What a generated project gets
 
+- **One process, project rules on top.** The process (issue, plan, build, review, `@codex review`, merge) comes from [agent-workflows](https://github.com/olaheavy-dev/agent-workflows). `AGENTS.md` points to it and adds the project's overlay (model split, plans in `docs/superpowers/`, the `docs/planning/status.md` handover), its rules, its merge conditions and the `## Code Review Rules` that hosted Codex review reads.
 - **Agents work under enforced rules.** `AGENTS.md` is the rulebook, and `CLAUDE.md` imports it. Hooks enforce what permission rules can't:
   - an allow-list push guard (named branches only, never main, no force);
   - a secrets guard on file reads, writes and Grep globs;

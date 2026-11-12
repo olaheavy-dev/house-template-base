@@ -11,6 +11,9 @@ secrets/
 .claude/settings.local.json
 CLAUDE.local.md
 
+# Superpowers per-plan ledgers (specs and plans live in docs/superpowers/ and are committed)
+.superpowers/
+
 # Copier leftovers from a conflicted update
 *.rej
 *.orig
