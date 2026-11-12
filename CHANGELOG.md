@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.7.0](https://github.com/olaheavy-dev/house-template-base/compare/v0.6.1...v0.7.0) (2026-11-12)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove the dotnet stack ([#50](https://github.com/olaheavy-dev/house-template-base/issues/50))
+* retire the agent_kit option ([#49](https://github.com/olaheavy-dev/house-template-base/issues/49))
+
+### Features
+
+* generated projects follow the shared agent-workflows process, with Code Review Rules and a status.md handover ([#45](https://github.com/olaheavy-dev/house-template-base/issues/45)) ([8bca364](https://github.com/olaheavy-dev/house-template-base/commit/8bca364785ad6a58db41f69770826c234e1bc80f))
+* remove the dotnet stack ([#50](https://github.com/olaheavy-dev/house-template-base/issues/50)) ([b828cdb](https://github.com/olaheavy-dev/house-template-base/commit/b828cdb055207d7b5fd0f5ead63049824d17fe15))
+* retire the agent_kit option ([#49](https://github.com/olaheavy-dev/house-template-base/issues/49)) ([c1bc3e3](https://github.com/olaheavy-dev/house-template-base/commit/c1bc3e3c611547115316566dab0b6a0ae222db62)), closes [#46](https://github.com/olaheavy-dev/house-template-base/issues/46)
+
 ## [0.6.1](https://github.com/olaheavy-dev/house-template-base/compare/v0.6.0...v0.6.1) (2026-11-06)
 
 
