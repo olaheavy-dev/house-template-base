@@ -159,7 +159,7 @@ def test_codeowners_names_the_owner_on_governed_paths(render):
 
 
 def test_a_project_with_no_stack_layers(render):
-    # Tooling repositories (such as the agent-kit plugin marketplace) use the base layer alone.
+    # Tooling repositories (such as a plugin marketplace) use the base layer alone.
     project = render(stacks=[], container_images=False)
     assert "Stack layers: none (base layer only)." in (project / "AGENTS.md").read_text()
     assert required_checks(project) <= pull_request_job_names(project)

@@ -93,16 +93,5 @@
         ]
       }
     ]
-  }{% if agent_kit %},
-  "extraKnownMarketplaces": {
-    "{{ github_org }}": {
-      "source": {
-        "source": "github",
-        "repo": "{{ github_org }}/agent-kit"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "agent-kit@{{ github_org }}": true
-  }{% endif %}
+  }
 }

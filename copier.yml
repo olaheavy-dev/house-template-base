@@ -81,11 +81,6 @@ container_images:
   help: Publish container images to GHCR with provenance and an SBOM?
   default: true
 
-agent_kit:
-  type: bool
-  help: Turn on the shared agent kit (planner, implementer, verifier, reviewers) from the agent-kit marketplace?
-  default: true
-
 license:
   type: str
   help: Licence for the repository
