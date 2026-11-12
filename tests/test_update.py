@@ -7,6 +7,7 @@ tags v0.2.0, then updates the project and checks that the change arrives and loc
 
 from __future__ import annotations
 
+import json
 import subprocess
 import sys
 from pathlib import Path
@@ -80,6 +81,61 @@ def test_update_brings_template_changes_and_keeps_local_work(tmp_path):
     leftovers = [p for p in project.rglob("*.rej") if ".git" not in p.parts]
     assert not leftovers
     assert "<<<<<<<" not in (project / "AGENTS.md").read_text()
+
+
+OLD_AGENT_KIT_QUESTION = """
+agent_kit:
+  type: bool
+  help: Turn on the shared agent kit from the agent-kit marketplace?
+  default: true
+"""
+
+OLD_AGENT_KIT_SETTINGS = """{% if agent_kit %},
+  "extraKnownMarketplaces": {
+    "{{ github_org }}": {"source": {"source": "github", "repo": "{{ github_org }}/agent-kit"}}
+  },
+  "enabledPlugins": {
+    "agent-kit@{{ github_org }}": true
+  }{% endif %}
+}"""
+
+
+def test_update_from_a_version_with_the_agent_kit_removes_the_plugin(tmp_path):
+    # Projects made before #46 answered agent_kit: true and have the plugin in .claude/settings.json.
+    # No Copier migration is needed: the update's three-way merge drops the block the old version rendered.
+    template = template_at_v010(tmp_path)
+    new_copier = (template / "copier.yml").read_text()
+    settings_file = template / "template" / ".claude" / "settings.json.jinja"
+    new_settings = settings_file.read_text()
+    # Rebuild the old version on top of the scratch copy: the question and the plugin block, tagged v0.0.9.
+    # The new settings end "  }\n}\n"; the old block went between the hooks' closing brace and the last one.
+    (template / "copier.yml").write_text(new_copier + OLD_AGENT_KIT_QUESTION)
+    settings_file.write_text(new_settings.rstrip()[:-1].rstrip() + OLD_AGENT_KIT_SETTINGS + "\n")
+    git(template, "commit", "-q", "-am", "old: agent kit")
+    git(template, "tag", "v0.0.9")
+    project = tmp_path / "project"
+    copier.run_copy(str(template), project, data={**DEFAULTS, "agent_kit": True}, defaults=True, unsafe=True,
+                    quiet=True, vcs_ref="v0.0.9")
+    old = json.loads((project / ".claude" / "settings.json").read_text())
+    assert [k for k in old["enabledPlugins"] if k.startswith("agent-kit@")]
+    assert yaml.safe_load((project / ".copier-answers.base.yml").read_text())["agent_kit"] is True
+    git(project, "init", "-q", "-b", "main")
+    git(project, "add", "-A")
+    git(project, "commit", "-q", "-m", "start")
+
+    (template / "copier.yml").write_text(new_copier)
+    settings_file.write_text(new_settings)
+    git(template, "commit", "-q", "-am", "feat!: retire the agent kit")
+    git(template, "tag", "v0.1.1")
+    copier.run_update(project, answers_file=".copier-answers.base.yml", defaults=True, unsafe=True, quiet=True,
+                      overwrite=True, skip_answered=True)
+
+    data = json.loads((project / ".claude" / "settings.json").read_text())
+    assert "enabledPlugins" not in data and "extraKnownMarketplaces" not in data
+    assert data["hooks"], "the rest of the settings survive"
+    answers = yaml.safe_load((project / ".copier-answers.base.yml").read_text())
+    assert answers["_commit"] == "v0.1.1" and "agent_kit" not in answers
+    assert not [p for p in project.rglob("*.rej") if ".git" not in p.parts]
 
 
 def test_this_repositorys_required_checks_are_jobs_its_workflows_run():

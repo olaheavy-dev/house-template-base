@@ -25,10 +25,6 @@ Stack layers: {% if stacks %}{% for s in stacks %}`{{ s }}`{% if not loop.last %
 ## How work flows
 
 The process is the owner's shared agent workflow, [agent-workflows](https://github.com/olaheavy-dev/agent-workflows), the same on every project: start from the GitHub issue, then brainstorm, write the plan, build test-first in a worktree, review the branch and verify it, open the PR, request `@codex review`, and merge with `Closes #N`. Its README lists the skill for each step; its house rules (linked to `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md`) cover how agents talk with the owner and hand over. This file is the project's overlay on top and wins where it is more specific.
-{%- if agent_kit %}
-
-The shared agent kit (plugin `agent-kit@{{ github_org }}`, turned on in `.claude/settings.json`) adds reviewer agents for the review step: `agent-kit:reviewer` for the pre-push and fallback reviews, and `agent-kit:deep-reviewer` (Fable) instead of it for owner-only changes and stage gates.
-{%- endif %}
 
 **Project overlay:**
 

@@ -67,17 +67,25 @@ def test_guard_hooks_fail_closed_and_the_stop_hook_fails_open(render):
     assert on_failure == {"guard-bash.py": "block", "guard-files.py": "block", "stop-checks.py": None}
 
 
-def test_agent_kit_is_enabled_from_the_org_marketplace(render):
-    data = settings(render(github_org="acme"))
-    assert data["extraKnownMarketplaces"]["acme"]["source"] == {"source": "github", "repo": "acme/agent-kit"}
-    assert data["enabledPlugins"] == {"agent-kit@acme": True}
-
-
-def test_without_the_agent_kit_settings_and_rulebook_have_no_plugin(render):
-    project = render(agent_kit=False)
+def test_the_retired_agent_kit_is_neither_offered_nor_emitted(render):
+    # The agent_kit option was retired (#46): its plugin repository no longer exists, and agent-workflows
+    # (Superpowers) provides the agents. No question, no plugin entry, no mention anywhere in the project.
+    questions = yaml.safe_load((Path(__file__).resolve().parents[1] / "copier.yml").read_text())
+    assert "agent_kit" not in questions
+    project = render(github_org="acme")
     data = settings(project)
     assert "enabledPlugins" not in data and "extraKnownMarketplaces" not in data
-    assert "agent-kit:" not in (project / "AGENTS.md").read_text()
+    for path in project.rglob("*"):
+        if path.is_file() and ".git" not in path.parts:
+            text = path.read_text(errors="ignore")
+            assert not re.search(r"agent[-_]kit|deep-reviewer", text, re.IGNORECASE), path
+
+
+def test_an_old_agent_kit_answer_is_ignored(render):
+    # Existing projects still carry `agent_kit` in .copier-answers.base.yml; passing it must not break a render.
+    project = render(agent_kit=True)
+    assert "enabledPlugins" not in settings(project)
+    assert "agent_kit" not in yaml.safe_load((project / ".copier-answers.base.yml").read_text())
 
 
 def test_path_scoped_rules_have_paths_frontmatter(render):
