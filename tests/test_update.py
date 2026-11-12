@@ -13,6 +13,7 @@ import sys
 from pathlib import Path
 
 import copier
+import pytest
 import yaml
 
 from conftest import DEFAULTS, ROOT
@@ -135,6 +136,45 @@ def test_update_from_a_version_with_the_agent_kit_removes_the_plugin(tmp_path):
     assert data["hooks"], "the rest of the settings survive"
     answers = yaml.safe_load((project / ".copier-answers.base.yml").read_text())
     assert answers["_commit"] == "v0.1.1" and "agent_kit" not in answers
+    assert not [p for p in project.rglob("*.rej") if ".git" not in p.parts]
+
+
+OLD_DOTNET_CHOICE = "    .NET backend (C#): dotnet\n"
+
+
+@pytest.mark.parametrize(("old_stacks", "new_stacks"), [(["dotnet"], []), (["dotnet", "nextjs"], ["nextjs"])])
+def test_update_from_a_version_with_the_dotnet_stack_keeps_the_other_stacks(tmp_path, old_stacks, new_stacks):
+    # Copier drops a saved answer that is no longer a choice and uses the default (fastapi, nextjs), so
+    # without the before-update migration a .NET project would quietly gain the FastAPI and Next.js
+    # toolchains. The migration takes dotnet out of the answers and keeps the rest.
+    template = template_at_v010(tmp_path)
+    new_copier = (template / "copier.yml").read_text()
+    nextjs_choice = "    Next.js frontend (TypeScript): nextjs\n"
+    assert nextjs_choice in new_copier and OLD_DOTNET_CHOICE not in new_copier
+    (template / "copier.yml").write_text(new_copier.replace(nextjs_choice, nextjs_choice + OLD_DOTNET_CHOICE))
+    git(template, "commit", "-q", "-am", "old: dotnet stack")
+    git(template, "tag", "v0.0.9")
+    project = tmp_path / "project"
+    copier.run_copy(str(template), project, data={**DEFAULTS, "stacks": old_stacks}, defaults=True, unsafe=True,
+                    quiet=True, vcs_ref="v0.0.9")
+    assert sorted(yaml.safe_load((project / ".copier-answers.base.yml").read_text())["stacks"]) == old_stacks
+    git(project, "init", "-q", "-b", "main")
+    git(project, "add", "-A")
+    git(project, "commit", "-q", "-m", "start")
+
+    (template / "copier.yml").write_text(new_copier)
+    git(template, "commit", "-q", "-am", "feat!: remove the dotnet stack")
+    git(template, "tag", "v0.1.1")
+    # As the template-update workflow runs it: --defaults, without --skip-answered.
+    copier.run_update(project, answers_file=".copier-answers.base.yml", defaults=True, unsafe=True, quiet=True,
+                      overwrite=True)
+
+    answers = yaml.safe_load((project / ".copier-answers.base.yml").read_text())
+    assert answers["_commit"] == "v0.1.1" and answers["stacks"] == new_stacks
+    codeql = yaml.safe_load((project / ".github" / "workflows" / "codeql.yml").read_text())
+    assert codeql["jobs"]["analyze"]["strategy"]["matrix"]["language"] == ["actions"] + (
+        ["javascript-typescript"] if "nextjs" in new_stacks else [])
+    assert (project / "compose.yaml").exists() == bool(new_stacks)
     assert not [p for p in project.rglob("*.rej") if ".git" not in p.parts]
 
 
