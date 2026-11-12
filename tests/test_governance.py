@@ -39,7 +39,7 @@ def pull_request_job_names(project: Path) -> set[str]:
     return names
 
 
-@pytest.mark.parametrize("stacks", [["fastapi", "nextjs"], ["dotnet"], ["fastapi"]])
+@pytest.mark.parametrize("stacks", [["fastapi", "nextjs"], ["nextjs"], ["fastapi"]])
 def test_every_required_check_is_a_job_that_runs_on_pull_requests(render, stacks):
     # A required check that no job reports leaves every merge waiting forever.
     project = render(stacks=stacks)
@@ -47,9 +47,8 @@ def test_every_required_check_is_a_job_that_runs_on_pull_requests(render, stacks
 
 
 def test_required_checks_include_each_stacks_codeql_language(render):
-    checks = required_checks(render(stacks=["dotnet", "nextjs"]))
-    assert {"make check", "actionlint", "zizmor", "CodeQL (actions)", "CodeQL (csharp)",
-            "CodeQL (javascript-typescript)"} <= checks
+    checks = required_checks(render(stacks=["nextjs"]))
+    assert {"make check", "actionlint", "zizmor", "CodeQL (actions)", "CodeQL (javascript-typescript)"} <= checks
     assert "CodeQL (python)" not in checks
 
 
@@ -103,9 +102,9 @@ def test_dependabot_covers_each_stack_and_always_the_workflows_and_hooks(render)
     assert ecosystems() == {"github-actions", "pre-commit", "uv", "npm", "docker"}
 
 
-def test_dependabot_for_a_dotnet_project_without_images(render):
-    cfg = yaml.safe_load((render(stacks=["dotnet"], container_images=False) / ".github" / "dependabot.yml").read_text())
-    assert {u["package-ecosystem"] for u in cfg["updates"]} == {"github-actions", "pre-commit", "nuget", "dotnet-sdk"}
+def test_dependabot_for_a_fastapi_project_without_images(render):
+    cfg = yaml.safe_load((render(stacks=["fastapi"], container_images=False) / ".github" / "dependabot.yml").read_text())
+    assert {u["package-ecosystem"] for u in cfg["updates"]} == {"github-actions", "pre-commit", "uv"}
     assert all(u["cooldown"]["default-days"] == 7 for u in cfg["updates"])
 
 

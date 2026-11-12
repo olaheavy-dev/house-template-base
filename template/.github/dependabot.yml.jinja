@@ -1,7 +1,7 @@
 # Owned by house-template-base. Weekly updates with a 7-day cooldown (new releases wait a week, so
 # a compromised release is usually caught before it lands), minor and patch updates grouped, majors
 # separate. Security updates skip the cooldown. Stack directories follow the layer conventions:
-# backend/ (fastapi), frontend/ (nextjs), the repository root for .NET.
+# backend/ (fastapi), frontend/ (nextjs).
 # https://docs.github.com/en/code-security/dependabot/working-with-dependabot/dependabot-options-reference
 version: 2
 
@@ -68,36 +68,6 @@ updates:
         update-types: [minor, patch]
       npm-major:
         update-types: [major]
-{%- endif %}
-{%- if 'dotnet' in stacks %}
-
-  - package-ecosystem: nuget
-    directory: /
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    labels: [dependencies]
-    commit-message:
-      prefix: chore
-      include: scope
-    groups:
-      nuget-minor-and-patch:
-        update-types: [minor, patch]
-      nuget-major:
-        update-types: [major]
-
-  # The SDK global.json pins: patch and feature-band releases carry security fixes.
-  - package-ecosystem: dotnet-sdk
-    directory: /
-    schedule:
-      interval: weekly
-    cooldown:
-      default-days: 7
-    labels: [dependencies]
-    commit-message:
-      prefix: chore
-      include: scope
 {%- endif %}
 {%- if container_images %}
 

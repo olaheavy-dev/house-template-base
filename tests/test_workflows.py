@@ -55,11 +55,11 @@ def test_codeql_languages_follow_the_stacks(render):
     assert languages() == ["actions", "python", "javascript-typescript"]
 
 
-def test_codeql_for_a_dotnet_only_project(render):
-    wf = workflows(render(stacks=["dotnet"]))
-    assert wf["codeql.yml"]["jobs"]["analyze"]["strategy"]["matrix"]["language"] == ["actions", "csharp"]
+def test_codeql_for_a_fastapi_only_project(render):
+    wf = workflows(render(stacks=["fastapi"]))
+    assert wf["codeql.yml"]["jobs"]["analyze"]["strategy"]["matrix"]["language"] == ["actions", "python"]
     steps = [s.get("name") for s in wf["ci.yml"]["jobs"]["check"]["steps"]]
-    assert "Install .NET" in steps and "Install Node.js" not in steps
+    assert "Install Node.js" not in steps
 
 
 def test_sharp_licence_exception_only_with_nextjs(render):
@@ -114,7 +114,7 @@ ACTIONLINT = "rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d352
 
 
 @pytest.mark.skipif(not shutil.which("docker"), reason="needs docker for actionlint")
-@pytest.mark.parametrize("stacks", [["fastapi", "nextjs"], ["dotnet"], ["fastapi"]])
+@pytest.mark.parametrize("stacks", [["fastapi", "nextjs"], ["nextjs"], ["fastapi"]])
 def test_actionlint_passes_for_each_stack_combination(render, stacks):
     project = render(stacks=stacks)
     subprocess.run(["git", "init", "-q"], cwd=project, check=True)

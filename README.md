@@ -11,10 +11,11 @@ Each layer is its own template repository with its own versions, applied with it
 
 | Layer | Gives a project |
 | --- | --- |
-| **base** (this repository) | `AGENTS.md` rulebook and Claude Code setup with guardrail hooks (plus a project `.mcp.json` with the Next.js DevTools server, pinned and with telemetry off, for the `nextjs` stack, and the Microsoft Learn docs server for `dotnet`), CI and security workflows, rulesets and settings as code, Dependabot, policy files, decision records |
+| **base** (this repository) | `AGENTS.md` rulebook and Claude Code setup with guardrail hooks (plus a project `.mcp.json` with the Next.js DevTools server, pinned and with telemetry off, for the `nextjs` stack), CI and security workflows, rulesets and settings as code, Dependabot, policy files, decision records |
 | `house-template-fastapi` (planned) | FastAPI, PostgreSQL with pgvector, storage, LangChain, LangGraph and LangSmith |
 | `house-template-nextjs` (planned) | Next.js shell, design tokens, accessibility and screenshot checks |
-| `house-template-dotnet` (in progress) | ASP.NET Core modular monolith, EF Core, Keycloak, mutation testing; a project has one backend, FastAPI or .NET |
+
+FastAPI is the only backend layer for now; a .NET layer may return later.
 
 Each file has exactly one owning layer (listed in `.github/template-owned/<layer>.txt`), so layers never fight over a file during updates.
 
@@ -27,7 +28,7 @@ make install && make check
 make repo-settings   # once the GitHub repository exists: rulesets, security and Actions settings
 ```
 
-`--trust` is needed because the template runs a post-copy message and, in later versions, migrations. Apply only templates from this organisation.
+`--trust` is needed because the template runs a post-copy message and, on update, migrations (one takes the removed `dotnet` stack out of old answers files). Apply only templates from this organisation.
 
 ## What a generated project gets
 
